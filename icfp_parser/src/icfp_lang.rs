@@ -33,7 +33,7 @@ pub enum Token {
     Binary(BinaryOp),
     Variable(i64),
     If,
-    Lambda,  // TODO
+    Lambda(i64),
 }
 
 fn parse_base94(b: &[u8]) -> i64 {
@@ -80,7 +80,7 @@ pub fn parse_token(s: &str) -> Token {
             _ => panic!("Invalid binary operator"),
         }),
         '?' => Token::If,
-        'L' => Token::Lambda,
+        'L' => Token::Lambda(parse_base94(&b[1..])),
         'v' => Token::Variable(parse_base94(&b[1..])),
         _ => panic!("Invalid token: {}", s),
     }
@@ -90,6 +90,7 @@ pub fn parse_program(s: &str) -> Vec<Token> {
     s.split_whitespace().map(parse_token).collect()
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Boolean(bool),
     Integer(i64),
@@ -113,8 +114,8 @@ pub enum Expr {
     DropFirst(Box<Expr>, Box<Expr>),
     Apply(Box<Expr>, Box<Expr>),
     If(Box<Expr>, Box<Expr>, Box<Expr>),
-    // Lambda(i64, Box<Expr>),
-    // Variable(i64),
+    Lambda(i64, Box<Expr>),
+    Variable(i64),
 }
 
 fn parse_tokens_impl(toks: &mut &[Token]) -> Expr {
@@ -162,11 +163,12 @@ fn parse_tokens_impl(toks: &mut &[Token]) -> Expr {
             let e3 = parse_tokens_impl(toks);
             Expr::If(Box::new(e1), Box::new(e2), Box::new(e3))
         }
-        &Token::Lambda => {
-            todo!();
+        &Token::Lambda(v) => {
+            let e = parse_tokens_impl(toks);
+            Expr::Lambda(v, Box::new(e))
         }
-        &Token::Variable(_v) => {
-            todo!();
+        &Token::Variable(v) => {
+            Expr::Variable(v)
         }
     }
 }
@@ -183,7 +185,7 @@ pub enum Value {
     Boolean(bool),
     Int(i64),
     String(String),
-    // Closure,
+    Closure(i64, Box<Expr>),
 }
 
 impl Value {
@@ -205,6 +207,48 @@ impl Value {
         match self {
             Value::String(s) => s,
             _ => panic!("Expected string"),
+        }
+    }
+}
+
+fn substitute(expr: &Expr, v: i64, e: &Expr) -> Expr {
+    match expr {
+        Expr::Boolean(b) => Expr::Boolean(*b),
+        Expr::Integer(n) => Expr::Integer(*n),
+        Expr::String(s) => Expr::String(s.clone()),
+        Expr::Neg(e1) => Expr::Neg(Box::new(substitute(e1, v, e))),
+        Expr::Not(e1) => Expr::Not(Box::new(substitute(e1, v, e))),
+        Expr::StrToInt(e1) => Expr::StrToInt(Box::new(substitute(e1, v, e))),
+        Expr::IntToStr(e1) => Expr::IntToStr(Box::new(substitute(e1, v, e))),
+        Expr::Add(e1, e2) => Expr::Add(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Sub(e1, e2) => Expr::Sub(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Mul(e1, e2) => Expr::Mul(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Div(e1, e2) => Expr::Div(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Mod(e1, e2) => Expr::Mod(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Lt(e1, e2) => Expr::Lt(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Gt(e1, e2) => Expr::Gt(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Eq(e1, e2) => Expr::Eq(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Or(e1, e2) => Expr::Or(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::And(e1, e2) => Expr::And(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Concat(e1, e2) => Expr::Concat(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::TakeFirst(e1, e2) => Expr::TakeFirst(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::DropFirst(e1, e2) => Expr::DropFirst(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::Apply(e1, e2) => Expr::Apply(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e))),
+        Expr::If(e1, e2, e3) => Expr::If(Box::new(substitute(e1, v, e)), Box::new(substitute(e2, v, e)), Box::new(substitute(e3, v, e))),
+        Expr::Lambda(v1, e1) => {
+            if *v1 == v {
+                // shadowing
+                Expr::Lambda(*v1, e1.clone())
+            } else {
+                Expr::Lambda(*v1, Box::new(substitute(e1, v, e)))
+            }
+        }
+        Expr::Variable(v1) => {
+            if *v1 == v {
+                e.clone()
+            } else {
+                Expr::Variable(*v1)
+            }
         }
     }
 }
@@ -239,8 +283,14 @@ pub fn evaluate(expr: &Expr) -> Value {
             let s = evaluate(e2).as_string();
             Value::String(s[n..].to_string())
         }
-        Expr::Apply(_e1, _e2) => {
-            todo!();
+        Expr::Apply(e1, e2) => {
+            let v = evaluate(e1);
+            match v {
+                Value::Closure(v, e) => {
+                    evaluate(&substitute(&e, v, e2))
+                }
+                _ => panic!("Expected closure"),
+            }
         }
         Expr::If(e1, e2, e3) => {
             if evaluate(e1).as_bool() {
@@ -248,6 +298,12 @@ pub fn evaluate(expr: &Expr) -> Value {
             } else {
                 evaluate(e3)
             }
+        }
+        Expr::Lambda(v, e) => {
+            Value::Closure(*v, e.clone())
+        }
+        Expr::Variable(v) => {
+            panic!("Free variable is not expected: {}", v);
         }
     }
 }
@@ -286,5 +342,11 @@ mod tests {
 
         let expr = parse_tokens(&parse_program("BT I$ S4%34"));
         assert_eq!(evaluate(&expr), Value::String(String::from("tes")));
+
+        let expr = parse_tokens(&parse_program("B$ B$ L# L$ v# B. SB%,,/ S}Q/2,$_ IK"));
+        assert_eq!(evaluate(&expr), Value::String(String::from("Hello World!")));
+
+        let expr = parse_tokens(&parse_program(r#"B$ B$ L" B$ L# B$ v" B$ v# v# L# B$ v" B$ v# v# L" L# ? B= v# I! I" B$ L$ B+ B$ v" v$ B$ v" v$ B- v# I" I%"#));
+        assert_eq!(evaluate(&expr), Value::Int(16));
     }
 }
