@@ -44,8 +44,32 @@ fn parse_base94(b: &[u8]) -> i64 {
     n
 }
 
+fn from_base94(n: i64) -> String {
+    if n == 0 {
+        return String::from("a");
+    }
+
+    let mut v = Vec::new();
+    let mut n = n;
+    while n > 0 {
+        v.push((n % 94 + 33) as u8);
+        n /= 94;
+    }
+    v.reverse();
+    String::from_utf8(v).unwrap()
+}
+
 const CONVERT_MAP: &'static [u8] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n".as_bytes();
 
+
+fn to_human_readable(s: &str) -> String {
+    s.bytes().map(|c| CONVERT_MAP[c as usize - 33] as char).collect::<String>()
+}
+
+fn from_human_readable(s: &str) -> String {
+    // TODO: this is slow
+    s.chars().map(|c| CONVERT_MAP.iter().position(|&x| x == c as u8).unwrap() as u8 + 33).collect::<Vec<u8>>().iter().map(|&c| c as char).collect::<String>()
+}
 
 pub fn parse_token(s: &str) -> Token {
     let b = s.bytes().collect::<Vec<u8>>();
@@ -54,7 +78,7 @@ pub fn parse_token(s: &str) -> Token {
         'T' => Token::Boolean(true),
         'F' => Token::Boolean(false),
         'I' => Token::Integer(parse_base94(&b[1..])),
-        'S' => Token::String(b[1..].iter().map(|&c| CONVERT_MAP[c as usize - 33] as char).collect::<String>()),
+        'S' => Token::String(to_human_readable(&s[1..])),
         'U' => Token::Unary(match b[1] as char {
             '-' => UnaryOp::Neg,
             '!' => UnaryOp::Not,
@@ -260,8 +284,14 @@ pub fn evaluate(expr: &Expr) -> Value {
         Expr::String(s) => Value::String(s.clone()),
         Expr::Neg(e) => Value::Int(-evaluate(e).as_int()),
         Expr::Not(e) => Value::Boolean(!evaluate(e).as_bool()),
-        Expr::StrToInt(e) => Value::Int(evaluate(e).as_string().parse().unwrap()),
-        Expr::IntToStr(e) => Value::String(evaluate(e).as_int().to_string()),
+        Expr::StrToInt(e) => {
+            let s = from_human_readable(&evaluate(e).as_string());
+            Value::Int(parse_base94(s.as_bytes()))
+        }
+        Expr::IntToStr(e) => {
+            let n = evaluate(e).as_int();
+            Value::String(to_human_readable(&from_base94(n)))
+        }
         Expr::Add(e1, e2) => Value::Int(evaluate(e1).as_int() + evaluate(e2).as_int()),
         Expr::Sub(e1, e2) => Value::Int(evaluate(e1).as_int() - evaluate(e2).as_int()),
         Expr::Mul(e1, e2) => Value::Int(evaluate(e1).as_int() * evaluate(e2).as_int()),
@@ -269,7 +299,17 @@ pub fn evaluate(expr: &Expr) -> Value {
         Expr::Mod(e1, e2) => Value::Int(evaluate(e1).as_int() % evaluate(e2).as_int()),
         Expr::Lt(e1, e2) => Value::Boolean(evaluate(e1).as_int() < evaluate(e2).as_int()),
         Expr::Gt(e1, e2) => Value::Boolean(evaluate(e1).as_int() > evaluate(e2).as_int()),
-        Expr::Eq(e1, e2) => Value::Boolean(evaluate(e1).as_int() == evaluate(e2).as_int()),
+        Expr::Eq(e1, e2) => {
+            let v1 = evaluate(e1);
+            let v2 = evaluate(e2);
+
+            match (v1, v2) {
+                (Value::Boolean(b1), Value::Boolean(b2)) => Value::Boolean(b1 == b2),
+                (Value::Int(n1), Value::Int(n2)) => Value::Boolean(n1 == n2),
+                (Value::String(s1), Value::String(s2)) => Value::Boolean(s1 == s2),
+                _ => panic!("Invalid comparison"),
+            }
+        }
         Expr::Or(e1, e2) => Value::Boolean(evaluate(e1).as_bool() || evaluate(e2).as_bool()),
         Expr::And(e1, e2) => Value::Boolean(evaluate(e1).as_bool() && evaluate(e2).as_bool()),
         Expr::Concat(e1, e2) => Value::String(evaluate(e1).as_string() + &evaluate(e2).as_string()),
@@ -339,6 +379,12 @@ mod tests {
 
         let expr = parse_tokens(&parse_program("B- I$ I#"));
         assert_eq!(evaluate(&expr), Value::Int(1));
+
+        let expr = parse_tokens(&parse_program("U# S4%34"));
+        assert_eq!(evaluate(&expr), Value::Int(15818151));
+
+        let expr = parse_tokens(&parse_program("U$ I4%34"));
+        assert_eq!(evaluate(&expr), Value::String(String::from("test")));
 
         let expr = parse_tokens(&parse_program("BT I$ S4%34"));
         assert_eq!(evaluate(&expr), Value::String(String::from("tes")));
