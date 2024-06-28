@@ -1,3 +1,6 @@
+use num_bigint::BigInt;
+use num_traits::cast::ToPrimitive;
+
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum UnaryOp {
     Neg,
@@ -27,7 +30,7 @@ pub enum BinaryOp {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {
     Boolean(bool),
-    Integer(i64),
+    Integer(BigInt),
     String(String),
     Unary(UnaryOp),
     Binary(BinaryOp),
@@ -36,7 +39,15 @@ pub enum Token {
     Lambda(i64),
 }
 
-fn parse_base94(b: &[u8]) -> i64 {
+fn parse_base94(b: &[u8]) -> BigInt {
+    let mut n = BigInt::from(0);
+    for &d in b {
+        n = n * 94 + (d - 33) as i64;
+    }
+    n
+}
+
+fn parse_base94_i64(b: &[u8]) -> i64 {
     let mut n = 0;
     for &d in b {
         n = n * 94 + (d - 33) as i64;
@@ -44,7 +55,23 @@ fn parse_base94(b: &[u8]) -> i64 {
     n
 }
 
-fn from_base94(n: i64) -> String {
+fn from_base94(n: BigInt) -> String {
+    if n == BigInt::ZERO {
+        return String::from("a");
+    }
+
+    let mut v = Vec::new();
+    let mut n = n;
+    while &n > &BigInt::ZERO {
+        let d: BigInt = &n % 94 + 33;
+        v.push(d.to_u8().unwrap());
+        n /= 94;
+    }
+    v.reverse();
+    String::from_utf8(v).unwrap()
+}
+
+fn from_base94_i64(n: i64) -> String {
     if n == 0 {
         return String::from("a");
     }
@@ -104,8 +131,8 @@ pub fn parse_token(s: &str) -> Token {
             _ => panic!("Invalid binary operator"),
         }),
         '?' => Token::If,
-        'L' => Token::Lambda(parse_base94(&b[1..])),
-        'v' => Token::Variable(parse_base94(&b[1..])),
+        'L' => Token::Lambda(parse_base94_i64(&b[1..])),
+        'v' => Token::Variable(parse_base94_i64(&b[1..])),
 
         // syntax sugar
         's' => Token::String(s[1..].to_owned()),
@@ -122,7 +149,7 @@ pub fn parse_program(s: &str) -> Vec<Token> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     Boolean(bool),
-    Integer(i64),
+    Integer(BigInt),
     String(String),
     Neg(Box<Expr>),
     Not(Box<Expr>),
@@ -155,7 +182,7 @@ fn parse_tokens_impl(toks: &mut &[Token]) -> Expr {
 
     match first_tok {
         &Token::Boolean(b) => Expr::Boolean(b),
-        &Token::Integer(n) => Expr::Integer(n),
+        Token::Integer(n) => Expr::Integer(n.clone()),
         Token::String(s) => Expr::String(s.clone()),
         &Token::Unary(op) => {
             let e = parse_tokens_impl(toks);
@@ -212,7 +239,7 @@ pub fn parse_tokens(toks: &[Token]) -> Expr {
 #[derive(PartialEq, Eq, Debug)]
 pub enum Value {
     Boolean(bool),
-    Int(i64),
+    Int(BigInt),
     String(String),
     Closure(i64, Box<Expr>),
 }
@@ -225,9 +252,9 @@ impl Value {
         }
     }
 
-    pub fn as_int(&self) -> i64 {
+    pub fn as_int(&self) -> BigInt {
         match self {
-            Value::Int(n) => *n,
+            Value::Int(n) => n.clone(),
             _ => panic!("Expected integer"),
         }
     }
@@ -243,7 +270,7 @@ impl Value {
 fn substitute(expr: &Expr, v: i64, e: &Expr) -> Expr {
     match expr {
         Expr::Boolean(b) => Expr::Boolean(*b),
-        Expr::Integer(n) => Expr::Integer(*n),
+        Expr::Integer(n) => Expr::Integer(n.clone()),
         Expr::String(s) => Expr::String(s.clone()),
         Expr::Neg(e1) => Expr::Neg(Box::new(substitute(e1, v, e))),
         Expr::Not(e1) => Expr::Not(Box::new(substitute(e1, v, e))),
@@ -285,7 +312,7 @@ fn substitute(expr: &Expr, v: i64, e: &Expr) -> Expr {
 pub fn evaluate(expr: &Expr) -> Value {
     match expr {
         Expr::Boolean(b) => Value::Boolean(*b),
-        Expr::Integer(n) => Value::Int(*n),
+        Expr::Integer(n) => Value::Int(n.clone()),
         Expr::String(s) => Value::String(s.clone()),
         Expr::Neg(e) => Value::Int(-evaluate(e).as_int()),
         Expr::Not(e) => Value::Boolean(!evaluate(e).as_bool()),
@@ -319,12 +346,12 @@ pub fn evaluate(expr: &Expr) -> Value {
         Expr::And(e1, e2) => Value::Boolean(evaluate(e1).as_bool() && evaluate(e2).as_bool()),
         Expr::Concat(e1, e2) => Value::String(evaluate(e1).as_string() + &evaluate(e2).as_string()),
         Expr::TakeFirst(e1, e2) => {
-            let n = evaluate(e1).as_int() as usize;
+            let n = evaluate(e1).as_int().to_usize().unwrap();
             let s = evaluate(e2).as_string();
             Value::String(s[..n].to_string())
         }
         Expr::DropFirst(e1, e2) => {
-            let n = evaluate(e1).as_int() as usize;
+            let n = evaluate(e1).as_int().to_usize().unwrap();
             let s = evaluate(e2).as_string();
             Value::String(s[n..].to_string())
         }
@@ -360,33 +387,33 @@ mod tests {
     #[test]
     fn test_token() {
         assert_eq!(parse_token("T"), Token::Boolean(true));
-        assert_eq!(parse_token("I/6"), Token::Integer(1337));
+        assert_eq!(parse_token("I/6"), Token::Integer(BigInt::from(1337)));
     }
 
     #[test]
     fn test_parse_program() {
         assert_eq!(parse_program("B+ I# I$"), vec![
             Token::Binary(BinaryOp::Add),
-            Token::Integer(2),
-            Token::Integer(3),
+            Token::Integer(BigInt::from(2)),
+            Token::Integer(BigInt::from(3)),
         ]);
         assert_eq!(parse_program("B- I$ I#"), vec![
             Token::Binary(BinaryOp::Sub),
-            Token::Integer(3),
-            Token::Integer(2),
+            Token::Integer(BigInt::from(3)),
+            Token::Integer(BigInt::from(2)),
         ]);
     }
 
     #[test]
     fn test_evaluate_program() {
         let expr = parse_tokens(&parse_program("B+ I# I$"));
-        assert_eq!(evaluate(&expr), Value::Int(5));
+        assert_eq!(evaluate(&expr), Value::Int(BigInt::from(5)));
 
         let expr = parse_tokens(&parse_program("B- I$ I#"));
-        assert_eq!(evaluate(&expr), Value::Int(1));
+        assert_eq!(evaluate(&expr), Value::Int(BigInt::from(1)));
 
         let expr = parse_tokens(&parse_program("U# S4%34"));
-        assert_eq!(evaluate(&expr), Value::Int(15818151));
+        assert_eq!(evaluate(&expr), Value::Int(BigInt::from(15818151)));
 
         let expr = parse_tokens(&parse_program("U$ I4%34"));
         assert_eq!(evaluate(&expr), Value::String(String::from("test")));
@@ -398,6 +425,6 @@ mod tests {
         assert_eq!(evaluate(&expr), Value::String(String::from("Hello World!")));
 
         let expr = parse_tokens(&parse_program(r#"B$ B$ L" B$ L# B$ v" B$ v# v# L# B$ v" B$ v# v# L" L# ? B= v# I! I" B$ L$ B+ B$ v" v$ B$ v" v$ B- v# I" I%"#));
-        assert_eq!(evaluate(&expr), Value::Int(16));
+        assert_eq!(evaluate(&expr), Value::Int(BigInt::from(16)));
     }
 }
