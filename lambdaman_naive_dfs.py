@@ -1,5 +1,10 @@
 #%%
 
+import sys
+
+sys.setrecursionlimit(10 ** 6)
+
+
 data = []
 try:
     while True:
