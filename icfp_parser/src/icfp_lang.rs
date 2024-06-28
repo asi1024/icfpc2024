@@ -106,6 +106,11 @@ pub fn parse_token(s: &str) -> Token {
         '?' => Token::If,
         'L' => Token::Lambda(parse_base94(&b[1..])),
         'v' => Token::Variable(parse_base94(&b[1..])),
+
+        // syntax sugar
+        's' => Token::String(s[1..].to_owned()),
+        'i' => Token::Integer(s[1..].parse().unwrap()),
+
         _ => panic!("Invalid token: {}", s),
     }
 }
