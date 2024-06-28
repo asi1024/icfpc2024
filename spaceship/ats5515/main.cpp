@@ -222,18 +222,25 @@ struct Solver {
 		return vx;
 	}
 
+	void TSP(vector<int> &order){
+
+
+	}
+
 	int solve() {
+		// 答えを格納する変数
+		// それぞれx軸、y軸の加速度(-1, 0, 1のいずれか)の列が入る
 		vector<int> resX;
 		vector<int> resY;
+
+		// 訪問する点の順番を決める
+		vector<int> visited(destX.size(), 0);
+		vector<int> order(destX.size());
 		int x = 0;
 		int y = 0;
 		int vx = 0;
 		int vy = 0;
-		vector<int> visited(destX.size(), 0);
 		for (int i = 0; i < destX.size(); i++) {
-			if (i % 1000 == 0) {
-				cerr << resX.size() << endl;
-			}
 			long long mnscore = 1e18;
 			int mnj = -1;
 			for (int j = 0; j < destX.size(); j++) {
@@ -241,7 +248,7 @@ struct Solver {
 					int dx = destX[j] - x;
 					int dy = destY[j] - y;
 					long long score = 0;
-					//score = min_turns(dx, dy, vx, vy);
+					// score = min_turns(dx, dy, vx, vy);
 					score = (long long)dx * dx + (long long)dy * dy;
 					if (mnscore > score) {
 						mnscore = score;
@@ -249,7 +256,23 @@ struct Solver {
 					}
 				}
 			}
+			order[i] = mnj;
 			visited[mnj] = 1;
+			x = destX[mnj];
+			y = destY[mnj];
+		}
+
+		TSP(order);
+
+		// 定められた順序で訪問していく
+		// 現在の速度と目標点との相対座標が求まればその目標点に行くまでの最小ターン数は簡単に計算できる
+		// 最小ターンで目標点に行く操作列のうち、与える加速度を与える回数が最も小さいものを選ぶ
+		x = 0;
+		y = 0;
+		vx = 0;
+		vy = 0;
+		for (int i = 0; i < destX.size(); i++) {
+			int mnj = order[i];
 
 			int dx = destX[mnj] - x;
 			int dy = destY[mnj] - y;
@@ -259,6 +282,8 @@ struct Solver {
 			x = destX[mnj];
 			y = destY[mnj];
 		}
+
+		// 解のvalidation機能の残骸
 
 		// for (int i = 0; i < destX.size(); i++) {
 		// 	if (i % 1000 == 0) {
@@ -289,7 +314,9 @@ struct Solver {
 		// }
 
 		// cerr << destX.size() << " " << cur << endl;
+
 		cerr << "score = " << resX.size() << endl;
+
 		output(resX, resY);
 		return 0;
 	}
