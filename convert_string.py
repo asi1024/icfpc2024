@@ -1,6 +1,7 @@
+#%%
 import argparse
 import sys
-
+import subprocess
 
 CONVERT_MAP = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!\"#$%&'()*+,-./:;<=>?@[\\]^_`|~ \n"
 INVERT_MAP = [None] * 128
@@ -9,13 +10,20 @@ for i, c in enumerate(CONVERT_MAP):
 
 
 def from_icfp(s: str) -> str:
-    b = s.encode("ascii")
-    return "".join(CONVERT_MAP[c - 33] for c in b)
+    res = subprocess.run("./icfp_parser/target/release/run", shell=True, text=s, input=s, check=True, stdout=subprocess.PIPE).stdout
+    x = res.strip()
+    assert x[:8] == 'String("'
+    assert x[-2:] == '")'
+    x = x[8:]
+    x = x[:-2]
+    x = x.replace("\\n", "\n")
+    return x
+    # return "".join(CONVERT_MAP[c - 33] for c in b)
 
 
 def to_icfp(s: str) -> str:
     b = s.encode("ascii")
-    return "".join(INVERT_MAP[c] for c in b)
+    return "S" + "".join(INVERT_MAP[c] for c in b)
 
 
 def main():
