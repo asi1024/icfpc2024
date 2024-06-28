@@ -234,15 +234,17 @@ struct Solver {
 			if (i % 1000 == 0) {
 				cerr << resX.size() << endl;
 			}
-			int mnturn = 100000000;
+			long long mnscore = 1e18;
 			int mnj = -1;
 			for (int j = 0; j < destX.size(); j++) {
 				if (!visited[j]) {
 					int dx = destX[j] - x;
 					int dy = destY[j] - y;
-					int turn = min_turns(dx, dy, vx, vy);
-					if (mnturn > turn) {
-						mnturn = turn;
+					long long score = 0;
+					//score = min_turns(dx, dy, vx, vy);
+					score = (long long)dx * dx + (long long)dy * dy;
+					if (mnscore > score) {
+						mnscore = score;
 						mnj = j;
 					}
 				}
@@ -251,14 +253,17 @@ struct Solver {
 
 			int dx = destX[mnj] - x;
 			int dy = destY[mnj] - y;
-			vx = generate_moves_1d(dx, vx, mnturn, resX);
-			vy = generate_moves_1d(dy, vy, mnturn, resY);
+			int turn = min_turns(dx, dy, vx, vy);
+			vx = generate_moves_1d(dx, vx, turn, resX);
+			vy = generate_moves_1d(dy, vy, turn, resY);
 			x = destX[mnj];
 			y = destY[mnj];
 		}
 
 		// for (int i = 0; i < destX.size(); i++) {
-
+		// 	if (i % 1000 == 0) {
+		// 		cerr << i << " " << resX.size() << endl;
+		// 	}
 		// 	int dx = destX[i] - x;
 		// 	int dy = destY[i] - y;
 		// 	int turn = min_turns(dx, dy, vx, vy);
