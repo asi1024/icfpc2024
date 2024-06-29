@@ -181,20 +181,45 @@ struct Solver {
 
 	void SA() {
 	}
-	bool can_be_at_1d(int dx, int vx, int turn) {
+	static bool can_be_at_1d(int dx, int vx, int turn) {
 		int tri_number = (turn * (turn + 1) / 2);
 		int base = vx * turn;
 		return (base - tri_number <= dx) && (base + tri_number >= dx);
 	}
-	int min_turns(int dx, int dy, int vx, int vy) {
-		int turn = 0;
-		while (true) {
-			if (can_be_at_1d(dx, vx, turn) && can_be_at_1d(dy, vy, turn)) {
-				break;
+	static int min_turns(int dx, int dy, int vx, int vy) {
+		if (false) {
+			int turn = 0;
+			while (true) {
+				if (can_be_at_1d(dx, vx, turn) && can_be_at_1d(dy, vy, turn)) {
+					break;
+				}
+				turn++;
 			}
-			turn++;
+			return turn;
+		} else {
+			// O(1)
+			vector<int> right_conditions = {
+				int(0.5 * (sqrt(max(0, -8 * dx + 4 * vx * vx - 4 * vx + 1)) + 2 * vx - 1)),
+				int(0.5 * (sqrt(max(0, 8 * dx + 4 * vx * vx + 4 * vx + 1)) - 2 * vx - 1)),
+				int(0.5 * (sqrt(max(0, -8 * dy + 4 * vy * vy - 4 * vy + 1)) + 2 * vy - 1)),
+				int(0.5 * (sqrt(max(0, 8 * dy + 4 * vy * vy + 4 * vy + 1)) - 2 * vy - 1)),
+			};
+			set<int> to_check;
+			to_check.insert(0);
+			for (int i : right_conditions) {
+				for (int j = i - 2; j <= i + 2; j++) {
+					if (j >= 0) {
+						to_check.insert(j);
+					}
+				}
+			}
+			for (auto &t : to_check) {
+				if (can_be_at_1d(dx, vx, t) && can_be_at_1d(dy, vy, t)) {
+					return t;
+				}
+			}
+			assert(false);
 		}
-		return turn;
 	}
 
 	int generate_moves_1d(int dx, int vx, int turn, vector<int> &res) {
@@ -300,8 +325,6 @@ struct Solver {
 
 	void final_velocity_range(int dx, int vx, int turn, int &mnx, int &mxx) {
 		int area = dx - vx * turn;
-		double turn_half = turn + 0.5;
-
 		double mnx_d = 1 + turn - sqrt(max(0.0, 0.5 - 4 * area + 2 * turn + 2 * turn * turn));
 		int lower = floor(mnx_d) - 2;
 		int upper = lower + 5;
@@ -348,14 +371,17 @@ struct Solver {
 	double distance(int x1, int y1, int x2, int y2) {
 		long long dx = x1 - x2;
 		long long dy = y1 - y2;
-		return sqrt(dx * dx + dy * dy);
+		// return abs(dx) + abs(dy);
+		// return pow(dx * dx + dy * dy, 0.7);
+		// return sqrt(dx * dx + dy * dy);
+		return dx * dx + dy * dy;
 	}
 	void TSP(vector<int> &order) {
 		int N = destX.size();
 		double score = 0;
 		double bestscore = 0;
 		double st = timer.get();
-		double timelimit = st + 10;
+		double timelimit = st + 60;
 		double tcoef = 1.0 / (timelimit - st);
 		int cnt = 0;
 		double log_interval_time = (timelimit - st) / 10;
@@ -365,17 +391,31 @@ struct Solver {
 		double max_score_coef = 0.5;
 		double r;
 		double T;
-		double T0 = 100000;
-		if (testcase_index == 19) {
-			T0 = 1000;
+		double T0 = 100;
+		if (testcase_index == 25) {
+			T0 = 10;
+		} else if (testcase_index == 24) {
+			T0 = 450000000;
+			// T0 = 5000;
+		} else if (testcase_index == 23) {
+			T0 = 10000000;
+		} else if (testcase_index == 22) {
+			T0 = 300 / 60;
+		} else if (testcase_index == 21) {
+			T0 = 2000 / 300;
+		} else if (testcase_index == 20) {
+			T0 = 500 / 80;
+			// T0 = 500 / 20;
+		} else if (testcase_index == 19) {
+			T0 = 10;
 		} else if (testcase_index == 18) {
-			T0 = 300000;
+			T0 = 300000 / 2000;
 		} else if (testcase_index == 17) {
 			T0 = 500;
 		} else if (testcase_index == 16) {
 			T0 = 60;
 		} else if (testcase_index == 15) {
-			T0 = 10;
+			T0 = 7;
 		}
 		while (true) {
 			double ti = timer.get();
@@ -387,34 +427,87 @@ struct Solver {
 				next_log_timing += log_interval_time;
 				cerr << fixed << setprecision(5) << T << " " << score << " " << bestscore << endl;
 			}
-
-			int a = rnd.nextInt(N);
-			int b = rnd.nextInt(N - 1);
-			if (a <= b) b++;
-			if (a > b) {
-				swap(a, b);
-			}
-			// reverse a~b
-
-			double scorediff = 0;
-			if (a == 0) {
-				scorediff -= distance(destX[order[a]], destY[order[a]], 0, 0);
-				scorediff += distance(destX[order[b]], destY[order[b]], 0, 0);
-			} else {
-				scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
-				scorediff += distance(destX[order[b]], destY[order[b]], destX[order[a - 1]], destY[order[a - 1]]);
-			}
-
-			if (b < N - 1) {
-				scorediff -= distance(destX[order[b]], destY[order[b]], destX[order[b + 1]], destY[order[b + 1]]);
-				scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b + 1]], destY[order[b + 1]]);
-			}
-			if (scorediff <= -T * rnd.nextLog()) {
-				score += scorediff;
-				if (bestscore > score) {
-					bestscore = score;
+			double r = rnd.nextDouble();
+			if (r < 0.8) {
+				int a = rnd.nextInt(N);
+				int b = rnd.nextInt(N - 1);
+				if (a <= b) b++;
+				if (a > b) {
+					swap(a, b);
 				}
-				reverse(order.begin() + a, order.begin() + (b + 1));
+				// reverse a ~ b
+
+				double scorediff = 0;
+				if (a == 0) {
+					scorediff -= distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediff += distance(destX[order[b]], destY[order[b]], 0, 0);
+				} else {
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+					scorediff += distance(destX[order[b]], destY[order[b]], destX[order[a - 1]], destY[order[a - 1]]);
+				}
+
+				if (b < N - 1) {
+					scorediff -= distance(destX[order[b]], destY[order[b]], destX[order[b + 1]], destY[order[b + 1]]);
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b + 1]], destY[order[b + 1]]);
+				}
+				// else{ // 原点に戻る場合
+				// 	scorediff -= distance(destX[order[b]], destY[order[b]], 0, 0);
+				// 	scorediff += distance(destX[order[a]], destY[order[a]], 0, 0);
+				// }
+				if (scorediff <= -T * rnd.nextLog()) {
+					score += scorediff;
+					if (bestscore > score) {
+						bestscore = score;
+					}
+					reverse(order.begin() + a, order.begin() + (b + 1));
+				}
+			} else {
+				int a = rnd.nextInt(N);
+				int b = rnd.nextInt(N - 1);
+				if (a <= b) b += 2;
+
+				// insert element a to positin b
+
+				double scorediff = 0;
+				if (a == 0) {
+					scorediff -= distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a + 1]], destY[order[a + 1]]);
+					scorediff += distance(destX[order[a + 1]], destY[order[a + 1]], 0, 0);
+				} else if (a == N - 1) {
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+				} else {
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a + 1]], destY[order[a + 1]]);
+					scorediff += distance(destX[order[a - 1]], destY[order[a - 1]], destX[order[a + 1]], destY[order[a + 1]]);
+				}
+
+				if (b == 0) {
+					scorediff += distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b]], destY[order[b]]);
+					scorediff -= distance(destX[order[b]], destY[order[b]], 0, 0);
+				} else if (b == N) {
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b - 1]], destY[order[b - 1]]);
+				} else {
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b - 1]], destY[order[b - 1]]);
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b]], destY[order[b]]);
+					scorediff -= distance(destX[order[b - 1]], destY[order[b - 1]], destX[order[b]], destY[order[b]]);
+				}
+
+				if (scorediff <= -T * rnd.nextLog()) {
+					score += scorediff;
+					if (bestscore > score) {
+						bestscore = score;
+					}
+					if (a < b) {
+						for (int i = a; i < b - 1; i++) {
+							swap(order[i], order[i + 1]);
+						}
+					} else {
+						for (int i = a; i > b; i--) {
+							swap(order[i], order[i - 1]);
+						}
+					}
+				}
 			}
 		}
 	}
@@ -433,8 +526,15 @@ struct Solver {
 			from = _from;
 		}
 
-		void do_eval() {
-			eval = turns + rnd.nextDouble() * 0.1;
+		void do_eval(int i) {
+			eval = turns + rnd.nextDouble() * 1;
+			if (i + 1 < destX.size()) {
+				// 	int dx = destX[i + 1] - destX[i];
+				// 	int dy = destY[i + 1] - destY[i];
+				// 	eval += min_turns(dx, dy, vx, vy);
+				eval +=  (abs(vx) + abs(vy));
+			}
+			// eval += vx * vx + vy * vy;
 		}
 
 		bool operator<(const BeamState &right) const {
@@ -449,10 +549,16 @@ struct Solver {
 		if (a == dp[i].end() || (*a).second > turn) {
 			dp[i][hash] = turn;
 			beam.emplace_back(vx, vy, turn, from);
-			beam.back().do_eval();
+			beam.back().do_eval(i);
 		}
 	}
+
 	int solve() {
+		// int seed = (int)(timer.get() * 1000000);
+		// cerr << seed << endl;
+		// for (int i = 0; i < seed; i++) {
+		// 	rnd.next();
+		// }
 		dp.resize(destX.size() + 1);
 		// 答えを格納する変数
 		// それぞれx軸、y軸の加速度(-1, 0, 1のいずれか)の列が入る
@@ -467,6 +573,10 @@ struct Solver {
 		int vx = 0;
 		int vy = 0;
 		for (int i = 0; i < destX.size(); i++) {
+			if (testcase_index == 5) {
+				order[i] = i;
+				continue;
+			}
 			long long mnscore = 1e18;
 			int mnj = -1;
 			for (int j = 0; j < destX.size(); j++) {
@@ -474,8 +584,9 @@ struct Solver {
 					int dx = destX[j] - x;
 					int dy = destY[j] - y;
 					long long score = 0;
-					// score = min_turns(dx, dy, vx, vy);
+
 					score = (long long)dx * dx + (long long)dy * dy;
+					// score = abs(dx) + abs(dy) + rnd.nextDouble() * 7; // ガチャ
 					if (mnscore > score) {
 						mnscore = score;
 						mnj = j;
@@ -490,9 +601,6 @@ struct Solver {
 
 		TSP(order);
 
-		// 定められた順序で訪問していく
-		// 現在の速度と目標点との相対座標が求まればその目標点に行くまでの最小ターン数は簡単に計算できる
-		// 最小ターンで目標点に行く操作列のうち、与える加速度を与える回数が最も小さいものを選ぶ
 		x = 0;
 		y = 0;
 		vx = 0;
@@ -501,35 +609,52 @@ struct Solver {
 		int mnx, mxx;
 		int mny, mxy;
 
-		int width = 1000;
+		int width = 100;
+		int max_transition = 30;
 
 		vector<vector<BeamState> > beams(destX.size() + 1);
 		beams[0].emplace_back(0, 0, 0, -1);
 
 		for (int i = 0; i < destX.size(); i++) {
-			if (i % 1000 == 0) {
-				cerr << i << endl;
+			// cerr << i << " " << beams[i].size() << endl;
+			if (i % 100 == 0) {
+				cerr << i << " " << beams[i][0].turns << " " << beams[i][0].vx << " " << beams[i][0].vy << endl;
 			}
 			int pos_index = order[i];
 			int dx = destX[pos_index] - x;
 			int dy = destY[pos_index] - y;
+			int best_turn = (int)1e9;
 			for (int j = 0; j < beams[i].size(); j++) {
 				vx = beams[i][j].vx;
 				vy = beams[i][j].vy;
 				int turns_so_far = beams[i][j].turns;
 				int turn = min_turns(dx, dy, vx, vy);
+				// if (turn == -1) continue;
+				if (best_turn > turns_so_far + turn) {
+					best_turn = turns_so_far + turn;
+				}
 				// if (i == 0) {
 				// 	cerr << i << " " << j << " " << vx << " " << vy << " " << turns_so_far << " " << turn << endl;
 				// }
-				for (int k = 0; k < 3; k++) {
+				for (int k = 0; k < 5; k++) {
 					int tt = turn + k;
+					if (best_turn + 40 <= turns_so_far + tt) break;
 					if (k == 0 || (can_be_at_1d(dx, vx, tt) && can_be_at_1d(dy, vy, tt))) {
 						final_velocity_range(dx, vx, tt, mnx, mxx);
 						final_velocity_range(dy, vy, tt, mny, mxy);
-
-						for (int xx = mnx; xx <= mxx; xx++) {
-							for (int yy = mny; yy <= mxy; yy++) {
-								add_beam(beams[i + 1], i, xx, yy, turns_so_far + tt, j);
+						if ((mxx - mnx + 1) * (mxy - mny + 1) > max_transition) {
+							add_beam(beams[i + 1], i, mnx, mny, turns_so_far + tt, j);
+							add_beam(beams[i + 1], i, mxx, mny, turns_so_far + tt, j);
+							add_beam(beams[i + 1], i, mnx, mxy, turns_so_far + tt, j);
+							add_beam(beams[i + 1], i, mxx, mxy, turns_so_far + tt, j);
+							for (int z = 0; z < max_transition - 4; z++) {
+								add_beam(beams[i + 1], i, rnd.nextInt(mnx, mxx), rnd.nextInt(mny, mxy), turns_so_far + tt, j);
+							}
+						} else {
+							for (int xx = mnx; xx <= mxx; xx++) {
+								for (int yy = mny; yy <= mxy; yy++) {
+									add_beam(beams[i + 1], i, xx, yy, turns_so_far + tt, j);
+								}
 							}
 						}
 					}
@@ -537,6 +662,7 @@ struct Solver {
 			}
 			if (beams[i + 1].size() > width) {
 				nth_element(beams[i + 1].begin(), beams[i + 1].begin() + width, beams[i + 1].end());
+				// sort(beams[i + 1].begin(), beams[i + 1].end());
 				beams[i + 1].resize(width);
 			}
 
@@ -568,7 +694,7 @@ struct Solver {
 			// cerr << dx << " " << vx1 << " " << vx2 << " " << turn << endl;
 			generate_moves_1d_with_final_velocity(dx, vx1, vx2, turn, resX);
 			generate_moves_1d_with_final_velocity(dy, vy1, vy2, turn, resY);
-
+			// cerr << turn << endl;
 			x = destX[pos_index];
 			y = destY[pos_index];
 		}
