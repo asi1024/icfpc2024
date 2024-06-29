@@ -23,3 +23,13 @@ B$ B$
         BT I# BD B* I# B% vs I% SO>FL
         B$ B$ vf vf B% B* vs <k> <p>
   <s>
+
+
+BT I" BD B% vs I% SO>FL
+
+が各位置での文字を生成する部分なので、
+
+? B= vs I<num> S<str>
+
+を前に置くと seed=<num> に到達したときに生成されるものを <str> に変更できる。
+やりすぎると TLE する

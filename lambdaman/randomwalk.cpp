@@ -11,6 +11,7 @@
 #include <random>
 #include <set>
 #include <string>
+#include <sstream>
 #include <vector>
 
 using i64 = long long;
@@ -20,8 +21,19 @@ int H, W, sy, sx;
 
 const int DY[] = {0, 1, 0, -1};
 const int DX[] = {1, 0, -1, 0};
+const char DIRNAME[] = "L>FO";  //"RDLU";
 
 bool visited[310][310];
+
+std::string to_base94(i64 x) {
+    std::string ret;
+    for (; x > 0; x /= 94) {
+        ret.push_back(x % 94 + 33);
+    }
+    ret.push_back('I');
+    std::reverse(ret.begin(), ret.end());
+    return ret;
+}
 
 struct Rng {
     i64 s, k, prime;
@@ -39,9 +51,25 @@ struct Rng {
     }
 };
 
-std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride) {
+std::pair<std::vector<int>, std::vector<i64>> make_random_seq(i64 s, i64 k, i64 prime) {
     Rng rng(s, k, prime);
 
+    std::vector<int> ret;
+    std::vector<i64> seeds;
+    for (;;) {
+        if (rng.exhausted()) {
+            break;
+        }
+        seeds.push_back(rng.s);
+        ret.push_back(rng.next());
+    }
+    std::reverse(ret.begin(), ret.end());
+    std::reverse(seeds.begin(), seeds.end());
+
+    return {ret, seeds};
+}
+
+std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride) {
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             visited[y][x] = false;
@@ -51,19 +79,11 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     int y = sy, x = sx;
     visited[y][x] = true;
 
-    std::vector<int> dirs;
-    for (;;) {
-        if (rng.exhausted()) {
-            break;
-        }
-        int dir = rng.next();
-        dirs.push_back(dir);
-    }
+    std::vector<int> dirs = make_random_seq(s, k, prime).first;
     if (dirs.size() != steps) {
         fprintf(stderr, "steps mismatch (%d vs %d)\n", (int)dirs.size(), steps);
         throw 42;
     }
-    std::reverse(dirs.begin(), dirs.end());
 
     for (int dir : dirs) {
         int y2 = y + DY[dir];
@@ -91,6 +111,87 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     }
 
     return {n_visited == n_cells, n_visited};
+}
+
+i64 first_visit_time[310][310];
+
+void aux_dfs(int y, int x, std::string& buf) {
+    for (int d = 0; d < 4; ++d) {
+        int y2 = y + DY[d];
+        int x2 = x + DX[d];
+        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[y2][x2] == -1) {
+            first_visit_time[y2][x2] = -2;
+            buf.push_back(DIRNAME[d]);
+            aux_dfs(y2, x2, buf);
+            buf.push_back(DIRNAME[d ^ 2]);
+        }
+    }
+}
+
+std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride) {
+    auto [dirs, seeds] = make_random_seq(s, k, prime);
+
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            first_visit_time[y][x] = -1;
+        }
+    }
+    int y = sy, x = sx;
+    first_visit_time[y][x] = 0;
+    for (int i = 0; i < (int)dirs.size(); ++i) {
+        int dir = dirs[i];
+        int y2 = y + DY[dir];
+        int x2 = x + DX[dir];
+        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
+            for (int d = 1; d < stride; ++d) {
+                first_visit_time[y + DY[dir] * d][x + DX[dir] * d] = -2;
+            }
+            y = y + DY[dir] * stride;
+            x = x + DX[dir] * stride;
+            if (first_visit_time[y][x] == -1) {
+                first_visit_time[y][x] = i + 1;
+            }
+        }
+    }
+
+    std::ostringstream oss;
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            if (board[y][x] == '#' || first_visit_time[y][x] == -1 || first_visit_time[y][x] == dirs.size()) {
+                continue;
+            }
+
+            bool has_bad_neighbor = false;
+            for (int d = 0; d < 4; ++d) {
+                int y2 = y + DY[d];
+                int x2 = x + DX[d];
+                if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[y2][x2] == -1) {
+                    has_bad_neighbor = true;
+                    break;
+                }
+            }
+
+            if (!has_bad_neighbor) {
+                continue;
+            }
+
+            std::string buf;
+            aux_dfs(y, x, buf);
+            buf.push_back(DIRNAME[dirs[first_visit_time[y][x]]]);
+
+            oss << "? B= vs " << to_base94(seeds[first_visit_time[y][x]]) << " S" << buf << " ";
+        }
+    }
+
+    for (int y = 0; y < H; ++y) {
+        for (int x = 0; x < W; ++x) {
+            if (board[y][x] != '#' && first_visit_time[y][x] == -1) {
+                return std::nullopt;
+            }
+        }
+    }
+
+    return oss.str();
 }
 
 i64 modpow(i64 a, i64 b, i64 mod) {
@@ -186,16 +287,6 @@ i64 decide_s(i64 p, i64 k, int steps) {
     return modpow(modinv(k, p), steps, p);
 }
 
-std::string to_base94(i64 x) {
-    std::string ret;
-    for (; x > 0; x /= 94) {
-        ret.push_back(x % 94 + 33);
-    }
-    ret.push_back('I');
-    std::reverse(ret.begin(), ret.end());
-    return ret;
-}
-
 std::string problem_id_to_string(int n) {
     std::string ret;
     for (; n > 0; n /= 10) {
@@ -206,7 +297,7 @@ std::string problem_id_to_string(int n) {
 }
 
 int main(int argc, char** argv) {
-    std::mt19937 rng(42);
+    std::mt19937 rng(37);
 
     H = 0;
     for (;;) {
@@ -228,11 +319,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    int n_sp = 0;
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             if (board[y][x] == 'L') {
                 sy = y;
                 sx = x;
+            }
+            if (board[y][x] != '#') {
+                ++n_sp;
             }
         }
     }
@@ -245,6 +340,32 @@ int main(int argc, char** argv) {
         for (i64 k : roots) {
             i64 s = decide_s(p, k, steps);
             auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride);
+
+            if (sota >= n_visited) continue;
+
+            sota = n_visited;
+            fprintf(stderr, "current best: %d / %d\n", n_visited, n_sp);
+
+            if (n_sp - n_visited <= 40) {
+                std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride);
+                if (rectified) {
+                    fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
+                    fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
+                    fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
+
+                    if (stride == 1) {
+                        printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
+                            problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                        );
+                    } else {
+                        printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
+                            problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                        );
+                    }
+                    fflush(stdout);
+                }
+            }
+
             if (isok) {
                 fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
                 fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
@@ -261,9 +382,8 @@ int main(int argc, char** argv) {
                 }
                 return 0;
             }
-            if (sota < n_visited) {
-                fprintf(stderr, "current best: %d\n", n_visited);
-                sota = n_visited;
+            if (n_visited == n_sp) {
+                fprintf(stderr, "done!\n");
             }
         }
     }
