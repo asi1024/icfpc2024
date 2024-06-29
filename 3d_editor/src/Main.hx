@@ -4,6 +4,8 @@ import pot.core.App;
 import pot.graphics.bitmap.BitmapGraphics;
 import pot.input.KeyValue;
 
+using StringTools;
+
 inline final SIZE_SHIFT = 5; // 32x32
 inline final SIZE = 1 << SIZE_SHIFT;
 inline final SIZE_MASK = SIZE - 1;
@@ -98,6 +100,46 @@ class Cell {
 	public function copy():Cell {
 		return new Cell(i, j, data);
 	}
+
+	public static function parseData(s:String):CellData {
+		return switch s {
+			case "":
+				None;
+			case "A":
+				Op(A);
+			case "B":
+				Op(B);
+			case "S":
+				Op(S);
+			case "+":
+				Op(Add);
+			case "-":
+				Op(Sub);
+			case "*":
+				Op(Mult);
+			case "/":
+				Op(Div);
+			case "%":
+				Op(Mod);
+			case "@":
+				Op(Warp);
+			case "=":
+				Op(Eq);
+			case "≠":
+				Op(Neq);
+			case "<":
+				Arrow(0, -1);
+			case ">":
+				Arrow(0, 1);
+			case "^":
+				Arrow(-1, 0);
+			case "v":
+				Arrow(1, 0);
+			case _:
+				final num = Std.parseInt(s);
+				num != null ? Int(num) : None;
+		}
+	}
 }
 
 class Field {
@@ -109,6 +151,48 @@ class Field {
 		for (i in 0...SIZE) {
 			for (j in 0...SIZE) {
 				cells.push(new Cell(i, j));
+			}
+		}
+	}
+
+	public function toString():String {
+		var mins = [SIZE, SIZE];
+		var maxs = [-1, -1];
+		for (c in cells) {
+			if (c.data != None) {
+				mins[0] = min(mins[0], c.i);
+				mins[1] = min(mins[1], c.j);
+				maxs[0] = max(maxs[0], c.i);
+				maxs[1] = max(maxs[1], c.j);
+			}
+		}
+		if (maxs[0] == -1)
+			return ".";
+		var res = "";
+		for (i in mins[0]...maxs[0] + 1) {
+			var line = "";
+			for (j in mins[1]...maxs[1] + 1) {
+				final data = cellAt(i, j).data;
+				line += " " + (data == None ? "." : data.toString());
+			}
+			res += line.trim() + "\n";
+		}
+		return res.trim();
+	}
+
+	public function fromString(data:String):Void {
+		for (c in cells) {
+			c.data = None;
+		}
+		final lines = data.trim().split("\n").map(l -> ~/ +/g.replace(l.trim(), " ").split(" "));
+		final w = lines[0].length;
+		final h = lines.length;
+		final di = SIZE - h >> 1;
+		final dj = SIZE - w >> 1;
+		trace(SIZE + " " + w + " " + h);
+		for (i => line in lines) {
+			for (j => s in line) {
+				cellAt(i + di, j + dj).data = Cell.parseData(s);
 			}
 		}
 	}
@@ -135,6 +219,7 @@ class World {
 	public final ticks:Array<Field> = [];
 	public final times:Array<Field> = [];
 	public var failReason:String = "";
+	public var result:CellData = None;
 
 	public function new() {
 	}
@@ -143,6 +228,7 @@ class World {
 		ticks.clear();
 		times.clear();
 		failReason = "";
+		result = None;
 		var f:Field = input.copy();
 		for (c in f.cells) {
 			if (c.data.match(Op(A))) {
@@ -152,21 +238,46 @@ class World {
 				c.data = Int(b);
 			}
 		}
-		final maxSteps = 1000;
+		final maxSteps = 10000;
+		function fail(msg:String, c:Cell = null):Void {
+			failReason += msg + "\n";
+			if (c != null) {
+				ticks[ticks.length - 1].cellAt(c.i, c.j).selected = true;
+			}
+		}
+		var nothingHappenedCount = 0;
 		for (tick in 0...maxSteps) {
 			ticks.push(f);
-			assert(times.length == f.t);
 			times.push(f);
+
+			if (result != None)
+				break;
+
 			f = f.copy(1);
+			var nothingHappened = true;
 
 			inline function writeTo(c:Cell, data:CellData):Void {
+				nothingHappened = false;
 				if (c.next != null) {
-					failReason = 'written twice at (${c.i}, ${c.j})';
+					fail('written twice at (${c.i}, ${c.j})', c);
 				}
 				c.next = data;
+				if (c.data.match(Op(S))) {
+					c.selected = true;
+					if (result != None && !result.equals(data)) {
+						fail('different results written: ${result.toString()} and ${data.toString()}', c);
+					} else {
+						result = data;
+					}
+				}
 			}
 
-			var backTo = -1;
+			final warpTargets:Array<{
+				i:Int,
+				j:Int,
+				t:Int,
+				data:CellData
+			}> = [];
 
 			for (c in f.cells) {
 				switch c.data {
@@ -196,7 +307,7 @@ class World {
 							}
 						}
 						function binOpPass(f:(x:CellData, y:CellData) -> Bool):Void {
-							if (l.data != None && r.data != None && f(l.data, t.data)) {
+							if (l.data != None && t.data != None && f(l.data, t.data)) {
 								l.willBeRemoved = true;
 								t.willBeRemoved = true;
 								writeTo(b, l.data);
@@ -211,9 +322,15 @@ class World {
 							case Mult:
 								binOp((x, y) -> x * y);
 							case Div:
-								binOp((x, y) -> x / y);
+								binOp((x, y) -> y == 0 ? {
+									fail("zero division", c);
+									0;
+								} : x / y);
 							case Mod:
-								binOp((x, y) -> x % y);
+								binOp((x, y) -> y == 0 ? {
+									fail("zero division (mod)", c);
+									0;
+								} : x % y);
 							case Eq | Neq:
 								binOpPass((x, y) -> (switch [x, y] {
 									case [Int(x), Int(y)] if (x == y):
@@ -228,24 +345,31 @@ class World {
 									case [v, Int(dx), Int(dy), Int(dt)] if (v != None):
 										do {
 											if (dt <= 0) {
-												failReason = "dt must be positive";
+												fail("dt must be positive", c);
 												break;
 											}
 											final x = c.j - dx;
 											final y = c.i - dy;
 											if (x < 0 || x >= SIZE) {
-												failReason = "x out of bounds: " + x.toString();
+												fail("x out of bounds: " + x.toString(), c);
 												break;
 											}
 											if (y < 0 || y >= SIZE) {
-												failReason = "y out of bounds: " + y.toString();
+												fail("y out of bounds: " + y.toString(), c);
 												break;
 											}
-											final t = f.t - dt;
+											final t = (f.t - 1) - dt; // -1 because time alrealy advanced
 											if (t < 0) {
-												failReason = "try to warp to negative time: " + t.toString();
+												fail("try to warp to negative time: " + t.toString(), c);
 												break;
 											}
+											warpTargets.push({
+												i: y.toInt(),
+												j: x.toInt(),
+												t: t.toInt(),
+												data: v
+											});
+											nothingHappened = false;
 										} while (false);
 									case _:
 								}
@@ -254,15 +378,46 @@ class World {
 						}
 				}
 			}
+			for (w1 in warpTargets) {
+				for (w2 in warpTargets) {
+					if (w1 == w2)
+						break;
+					if (w1.t != w2.t) {
+						fail('tried to warp to different times: ${w1.t} and ${w2.t}');
+						break;
+					}
+					if (w1.i == w2.i && w1.j == w2.j && !w1.data.equals(w2.data)) {
+						fail('tried to write different data at (${w1.i}, ${w1.j}, t=${w1.t}): ${w1.data.toString()} and ${w2.data.toString()}',
+							f.cellAt(w1.i, w1.j));
+						break;
+					}
+				}
+			}
 			if (failReason != "")
 				break;
-
-			for (c in f.cells) {
-				if (c.willBeRemoved) {
-					c.data = None;
+			if (nothingHappened)
+				if (++nothingHappenedCount >= 10)
+					break;
+			if (warpTargets.length > 0 && result == None) {
+				final t = warpTargets[0].t;
+				while (times.length > t + 1) {
+					times.pop();
 				}
-				if (c.next != null) {
-					c.data = c.next;
+				f = times[t].copy();
+				for (w in warpTargets) {
+					final c = f.cellAt(w.i, w.j);
+					c.data = w.data;
+					c.selected = true;
+				}
+				times.pop();
+			} else {
+				for (c in f.cells) {
+					if (c.willBeRemoved) {
+						c.data = None;
+					}
+					if (c.next != null) {
+						c.data = c.next;
+					}
 				}
 			}
 		}
@@ -293,11 +448,22 @@ class Main extends App {
 	var tick:Int = 0;
 	var cursorI:Int = SIZE >> 1;
 	var cursorJ:Int = SIZE >> 1;
-	final inputs:Array<BigInt> = [0, 0];
+	final inputs:Array<BigInt> = [1, 1];
 
 	override function setup():Void {
 		input.scalingMode = Canvas;
 		g = new BitmapGraphics(canvas.getContext2d());
+
+		Browser.document.getElementById("import").onclick = () -> {
+			Browser.window.navigator.clipboard.readText().then(text -> {
+				w.input.fromString(text);
+				mode = Edit;
+			});
+		}
+		Browser.document.getElementById("export").onclick = () -> {
+			Browser.window.navigator.clipboard.writeText(w.input.toString());
+		}
+
 		pot.start();
 	}
 
@@ -341,7 +507,7 @@ class Main extends App {
 	}
 
 	function key(keyValue:String):Bool {
-		return input.keyboard.isKeyDown(keyValue);
+		return input.keyboard.isKeyDown(keyValue) || input.keyboard.isKeyDown(keyValue.toUpperCase());
 	}
 
 	function editText():Void {
@@ -451,6 +617,12 @@ class Main extends App {
 		final f = w.input;
 		switch mode {
 			case Edit:
+				inline function editCell(c:Cell):Void {
+					mode = Write(c);
+					textInput = c.data.toString();
+					dragging = false;
+				}
+
 				do {
 					final cell = cellAt(f, mouse.pos);
 					if (cell != null) {
@@ -458,6 +630,10 @@ class Main extends App {
 							cursorI = cell.i;
 							cursorJ = cell.j;
 							dragging = true;
+							if (selectedCells(f).length == 1 && cell.selected) {
+								editCell(cell);
+								break;
+							}
 							selecting = !cell.selected;
 							if (!kb.isShiftDown() && !cell.selected) {
 								clearSelection(f);
@@ -477,8 +653,7 @@ class Main extends App {
 							null;
 						}
 						if (cellToEdit != null) {
-							mode = Write(cellToEdit);
-							textInput = cellToEdit.data.toString();
+							editCell(cellToEdit);
 							break;
 						}
 
@@ -561,54 +736,20 @@ class Main extends App {
 						runSimulation();
 						mode = View;
 						tick = 0;
+						playing = true;
+						frameCount = 10; // hack
 						break;
 					}
 				} while (false);
 			case Write(cell):
 				editText();
 				cell.text = textInput == "" ? " " : textInput;
-				if (key(Escape)) {
+				if (key(Escape) || mouse.dright == 1) {
 					cell.text = "";
 					mode = Edit;
-				} else if (key("e")) {
+				} else if (key("e") || mouse.dleft == 1) {
 					cell.text = "";
-					cell.data = switch textInput {
-						case "":
-							None;
-						case "A":
-							Op(A);
-						case "B":
-							Op(B);
-						case "S":
-							Op(S);
-						case "+":
-							Op(Add);
-						case "-":
-							Op(Sub);
-						case "*":
-							Op(Mult);
-						case "/":
-							Op(Div);
-						case "%":
-							Op(Mod);
-						case "@":
-							Op(Warp);
-						case "=":
-							Op(Eq);
-						case "≠":
-							Op(Neq);
-						case "<":
-							Arrow(0, -1);
-						case ">":
-							Arrow(0, 1);
-						case "^":
-							Arrow(-1, 0);
-						case "v":
-							Arrow(1, 0);
-						case _:
-							final num = Std.parseInt(textInput);
-							num != null ? Int(num) : None;
-					}
+					cell.data = Cell.parseData(textInput);
 					mode = Edit;
 				}
 			case Paste:
@@ -624,17 +765,18 @@ class Main extends App {
 			case View:
 				if (key(Space))
 					playing = !playing;
+				final multiplier = kb.isControlDown() ? 100 : kb.isShiftDown() ? 10 : 1;
 				if (key("a"))
-					tick = max(0, tick - 1);
-				if (key("d") || playing && frameCount % 10 == 0)
-					tick = min(w.ticks.length - 1, tick + 1);
+					tick = max(0, tick - multiplier);
+				if (key("d") || playing && (multiplier > 1 || frameCount % 10 == 0))
+					tick = min(w.ticks.length - 1, tick + Math.ceil(multiplier / (playing ? 10 : 1)));
 				if (playing && tick == w.ticks.length - 1)
 					playing = false;
 				if (key("q"))
 					tick = 0;
 				if (key("e"))
 					tick = w.ticks.length - 1;
-				if (key(Escape))
+				if (key(Escape) || key(Enter))
 					mode = Edit;
 			case Input(index):
 				editText();
@@ -684,7 +826,7 @@ class Main extends App {
 			case Paste:
 				'Paste';
 			case View:
-				'View';
+				'Viewing Result';
 			case Input(index):
 				'Editing Input ${"AB".charAt(index)}';
 		});
@@ -695,6 +837,7 @@ class Main extends App {
 				msg("Wheel: Zoom");
 				y += lh * 0.5;
 				msg("LMB & Drag: (De)Select");
+				msg("- Hold Shift: Keep Selection");
 				msg("ESC: Deselect All");
 				y += lh * 0.5;
 				msg("WASD, HJKL, Arrows: Move");
@@ -706,8 +849,8 @@ class Main extends App {
 				msg("C: Copy Cells");
 				msg("V: Paste Cells");
 				y += lh * 0.5;
-				msg("1: Edit Input A ( = " + inputs[0].toString() + ")");
-				msg("2: Edit Input B ( = " + inputs[1].toString() + ")");
+				msg("1: Edit Input A (= " + inputs[0].toString() + ")");
+				msg("2: Edit Input B (= " + inputs[1].toString() + ")");
 				y += lh * 0.5;
 				msg("Enter: Run Simulation");
 			case Write(_):
@@ -723,22 +866,36 @@ class Main extends App {
 				y += lh * 0.5;
 				msg("Backspace: Erace Last");
 				y += lh * 0.5;
-				msg("E: Confirm");
-				msg("ESC: Cancel");
+				msg("E, LMB: Confirm");
+				msg("ESC, RMB: Cancel");
 			case Paste:
 				msg("LMB: Confirm");
 				msg("RMB, ESC: Cancel");
 			case View:
+				if (w.failReason != "") {
+					g.fillColor(1, 0, 0);
+					for (err in w.failReason.trim().split("\n")) {
+						msg(err);
+					}
+					y += lh * 0.5;
+					g.fillColor(0);
+				}
 				msg("Showing Tick " + (tick + 1) + "/" + w.ticks.length);
 				msg("time = " + (w.ticks[tick].t + 1));
 				y += lh * 0.5;
-				msg("A: Prev Tick");
-				msg("D: Next Tick");
+				final kb = input.keyboard;
+				final postfix = kb.isControlDown() ? " x100" : kb.isShiftDown() ? " x10" : "";
+				msg("A: Prev Tick " + postfix);
+				msg("D: Next Tick " + postfix);
 				msg("Q: First Tick");
 				msg("E: Last Tick");
 				msg("Space: Play/Pause");
 				y += lh * 0.5;
-				msg("ESC: Edit mode");
+				msg("Hold Shift: x10 faster");
+				msg("Hold Ctrl: x100 faster");
+				y += lh * 0.5;
+				msg("Enter: Back to Edit");
+				msg("ESC: Back to Edit");
 			case Input(index):
 				msg("AB".charAt(index) + " = " + textInput);
 				y += lh * 0.5;

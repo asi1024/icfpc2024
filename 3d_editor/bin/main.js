@@ -66,6 +66,13 @@ class EReg {
 }
 EReg.__name__ = true;
 class HxOverrides {
+	static cca(s,index) {
+		let x = s.charCodeAt(index);
+		if(x != x) {
+			return undefined;
+		}
+		return x;
+	}
 	static substr(s,pos,len) {
 		if(len == null) {
 			len = s.length;
@@ -182,6 +189,49 @@ class Cell {
 	copy() {
 		return new Cell(this.i,this.j,this.data);
 	}
+	static parseData(s) {
+		switch(s) {
+		case "":
+			return CellData.None;
+		case "%":
+			return CellData.Op(4);
+		case "*":
+			return CellData.Op(2);
+		case "+":
+			return CellData.Op(0);
+		case "-":
+			return CellData.Op(1);
+		case "/":
+			return CellData.Op(3);
+		case "<":
+			return CellData.Arrow(0,-1);
+		case "=":
+			return CellData.Op(5);
+		case ">":
+			return CellData.Arrow(0,1);
+		case "@":
+			return CellData.Op(7);
+		case "A":
+			return CellData.Op(8);
+		case "B":
+			return CellData.Op(9);
+		case "S":
+			return CellData.Op(10);
+		case "^":
+			return CellData.Arrow(-1,0);
+		case "v":
+			return CellData.Arrow(1,0);
+		case "≠":
+			return CellData.Op(6);
+		default:
+			let num = Std.parseInt(s);
+			if(num != null) {
+				return CellData.Int(BigIntWrapper.fromInt(num));
+			} else {
+				return CellData.None;
+			}
+		}
+	}
 }
 Cell.__name__ = true;
 class Field {
@@ -228,6 +278,79 @@ class Field {
 			this.cells.push(new Cell(i,31));
 		}
 	}
+	toString() {
+		let mins_0 = 32;
+		let mins_1 = 32;
+		let maxs_0 = -1;
+		let maxs_1 = -1;
+		let _g = 0;
+		let _g1 = this.cells;
+		while(_g < _g1.length) {
+			let c = _g1[_g];
+			++_g;
+			if(c.data != CellData.None) {
+				let a = mins_0;
+				let b = c.i;
+				mins_0 = a < b ? a : b;
+				let a1 = mins_1;
+				let b1 = c.j;
+				mins_1 = a1 < b1 ? a1 : b1;
+				let a2 = maxs_0;
+				let b2 = c.i;
+				maxs_0 = a2 > b2 ? a2 : b2;
+				let a3 = maxs_1;
+				let b3 = c.j;
+				maxs_1 = a3 > b3 ? a3 : b3;
+			}
+		}
+		if(maxs_0 == -1) {
+			return ".";
+		}
+		let res = "";
+		let _g2 = mins_0;
+		let _g3 = maxs_0 + 1;
+		while(_g2 < _g3) {
+			let i = _g2++;
+			let line = "";
+			let _g = mins_1;
+			let _g1 = maxs_1 + 1;
+			while(_g < _g1) {
+				let data = this.cellAt(i,_g++).data;
+				line += " " + (data == CellData.None ? "." : _$Main_CellDataTools.toString(data));
+			}
+			res += StringTools.trim(line) + "\n";
+		}
+		return StringTools.trim(res);
+	}
+	fromString(data) {
+		let _g = 0;
+		let _g1 = this.cells;
+		while(_g < _g1.length) _g1[_g++].data = CellData.None;
+		let _this = StringTools.trim(data).split("\n");
+		let result = new Array(_this.length);
+		let _g2 = 0;
+		let _g3 = _this.length;
+		while(_g2 < _g3) {
+			let i = _g2++;
+			let _this_r = new RegExp(" +","g".split("u").join(""));
+			result[i] = StringTools.trim(_this[i]).replace(_this_r," ").split(" ");
+		}
+		let w = result[0].length;
+		let h = result.length;
+		let di = 32 - h >> 1;
+		let dj = 32 - w >> 1;
+		console.log("src/Main.hx:192:",32 + " " + w + " " + h);
+		let _g_current = 0;
+		while(_g_current < result.length) {
+			let _g_value = result[_g_current];
+			let _g_key = _g_current++;
+			let _g_current1 = 0;
+			while(_g_current1 < _g_value.length) {
+				let _g_value1 = _g_value[_g_current1++];
+				this.cellAt(_g_key + di,_g_current1 - 1 + dj).data = Cell.parseData(_g_value1);
+			}
+		}
+	}
 	cellAt(i,j) {
 		return this.cells[(i & 31) << 5 | j & 31];
 	}
@@ -254,6 +377,7 @@ class Field {
 Field.__name__ = true;
 class World {
 	constructor() {
+		this.result = CellData.None;
 		this.failReason = "";
 		this.times = [];
 		this.ticks = [];
@@ -263,6 +387,7 @@ class World {
 		this.ticks.length = 0;
 		this.times.length = 0;
 		this.failReason = "";
+		this.result = CellData.None;
 		let f = this.input.copy();
 		let _g = 0;
 		let _g1 = f.cells;
@@ -279,15 +404,24 @@ class World {
 			}
 		}
 		let _gthis = this;
+		let fail = function(msg,c) {
+			_gthis.failReason += msg + "\n";
+			if(c != null) {
+				_gthis.ticks[_gthis.ticks.length - 1].cellAt(c.i,c.j).selected = true;
+			}
+		};
+		let nothingHappenedCount = 0;
 		let _g2 = 0;
-		while(_g2 < 1000) {
+		while(_g2 < 10000) {
 			++_g2;
 			this.ticks.push(f);
-			if(this.times.length != f.t) {
-				throw haxe_Exception.thrown("assertion error");
-			}
 			this.times.push(f);
+			if(this.result != CellData.None) {
+				break;
+			}
 			f = f.copy(1);
+			let nothingHappened = true;
+			let warpTargets = [];
 			let _g = 0;
 			let _g1 = f.cells;
 			while(_g < _g1.length) {
@@ -305,10 +439,21 @@ class World {
 					let src = f.cellAt(c.i - _g3,c.j - _g4);
 					let dst = f.cellAt(c.i + _g3,c.j + _g4);
 					if(src.data != CellData.None) {
+						let data = src.data;
+						nothingHappened = false;
 						if(dst.next != null) {
-							_gthis.failReason = "written twice at (" + dst.i + ", " + dst.j + ")";
+							fail("written twice at (" + dst.i + ", " + dst.j + ")",dst);
 						}
-						dst.next = src.data;
+						dst.next = data;
+						let _g = dst.data;
+						if(_g._hx_index == 3 && _g.op == 10) {
+							dst.selected = true;
+							if(_gthis.result != CellData.None && !Type.enumEq(_gthis.result,data)) {
+								fail("different results written: " + _$Main_CellDataTools.toString(_gthis.result) + " and " + _$Main_CellDataTools.toString(data),dst);
+							} else {
+								_gthis.result = data;
+							}
+						}
 						src.willBeRemoved = true;
 					}
 					break;
@@ -326,31 +471,73 @@ class World {
 								l.willBeRemoved = true;
 								t.willBeRemoved = true;
 								let res = f(_g.a,_g1.a);
+								let data = CellData.Int(res);
+								nothingHappened = false;
 								if(b.next != null) {
-									_gthis.failReason = "written twice at (" + b.i + ", " + b.j + ")";
+									fail("written twice at (" + b.i + ", " + b.j + ")",b);
 								}
-								b.next = CellData.Int(res);
+								b.next = data;
+								let _g2 = b.data;
+								if(_g2._hx_index == 3 && _g2.op == 10) {
+									b.selected = true;
+									if(_gthis.result != CellData.None && !Type.enumEq(_gthis.result,data)) {
+										fail("different results written: " + _$Main_CellDataTools.toString(_gthis.result) + " and " + _$Main_CellDataTools.toString(data),b);
+									} else {
+										_gthis.result = data;
+									}
+								}
+								let data1 = CellData.Int(res);
+								nothingHappened = false;
 								if(r.next != null) {
-									_gthis.failReason = "written twice at (" + r.i + ", " + r.j + ")";
+									fail("written twice at (" + r.i + ", " + r.j + ")",r);
 								}
-								r.next = CellData.Int(res);
+								r.next = data1;
+								let _g3 = r.data;
+								if(_g3._hx_index == 3 && _g3.op == 10) {
+									r.selected = true;
+									if(_gthis.result != CellData.None && !Type.enumEq(_gthis.result,data1)) {
+										fail("different results written: " + _$Main_CellDataTools.toString(_gthis.result) + " and " + _$Main_CellDataTools.toString(data1),r);
+									} else {
+										_gthis.result = data1;
+									}
+								}
 							}
 						}
 					};
 					let binOpPass = function(f) {
-						if(l.data != CellData.None && r.data != CellData.None && f(l.data,t.data)) {
+						if(l.data != CellData.None && t.data != CellData.None && f(l.data,t.data)) {
 							l.willBeRemoved = true;
 							t.willBeRemoved = true;
 							let data = l.data;
+							nothingHappened = false;
 							if(b.next != null) {
-								_gthis.failReason = "written twice at (" + b.i + ", " + b.j + ")";
+								fail("written twice at (" + b.i + ", " + b.j + ")",b);
 							}
 							b.next = data;
+							let _g = b.data;
+							if(_g._hx_index == 3 && _g.op == 10) {
+								b.selected = true;
+								if(_gthis.result != CellData.None && !Type.enumEq(_gthis.result,data)) {
+									fail("different results written: " + _$Main_CellDataTools.toString(_gthis.result) + " and " + _$Main_CellDataTools.toString(data),b);
+								} else {
+									_gthis.result = data;
+								}
+							}
 							let data1 = t.data;
+							nothingHappened = false;
 							if(r.next != null) {
-								_gthis.failReason = "written twice at (" + r.i + ", " + r.j + ")";
+								fail("written twice at (" + r.i + ", " + r.j + ")",r);
 							}
 							r.next = data1;
+							let _g1 = r.data;
+							if(_g1._hx_index == 3 && _g1.op == 10) {
+								r.selected = true;
+								if(_gthis.result != CellData.None && !Type.enumEq(_gthis.result,data1)) {
+									fail("different results written: " + _$Main_CellDataTools.toString(_gthis.result) + " and " + _$Main_CellDataTools.toString(data1),r);
+								} else {
+									_gthis.result = data1;
+								}
+							}
 						}
 					};
 					switch(op) {
@@ -371,12 +558,22 @@ class World {
 						break;
 					case 3:
 						binOp(function(x,y) {
-							return BigIntWrapper.div(x,y);
+							if(BigIntWrapper.eq(y,BigIntWrapper.fromInt(0))) {
+								fail("zero division",c);
+								return BigIntWrapper.fromInt(0);
+							} else {
+								return BigIntWrapper.div(x,y);
+							}
 						});
 						break;
 					case 4:
 						binOp(function(x,y) {
-							return BigIntWrapper.mod(x,y);
+							if(BigIntWrapper.eq(y,BigIntWrapper.fromInt(0))) {
+								fail("zero division (mod)",c);
+								return BigIntWrapper.fromInt(0);
+							} else {
+								return BigIntWrapper.mod(x,y);
+							}
 						});
 						break;
 					case 5:case 6:
@@ -396,36 +593,39 @@ class World {
 						});
 						break;
 					case 7:
-						let _g5 = l.data;
-						let _g6 = r.data;
-						let _g7 = b.data;
-						if(_g5._hx_index == 1) {
-							let _g = _g5.a;
-							if(_g6._hx_index == 1) {
-								let _g1 = _g6.a;
-								if(_g7._hx_index == 1) {
-									let _g2 = _g7.a;
-									if(t.data != CellData.None) {
+						let _g5 = t.data;
+						let _g6 = l.data;
+						let _g7 = r.data;
+						let _g8 = b.data;
+						if(_g6._hx_index == 1) {
+							let _g = _g6.a;
+							if(_g7._hx_index == 1) {
+								let _g1 = _g7.a;
+								if(_g8._hx_index == 1) {
+									let _g2 = _g8.a;
+									if(_g5 != CellData.None) {
 										do {
 											if(BigIntWrapper.leq(_g2,BigIntWrapper.fromInt(0))) {
-												this.failReason = "dt must be positive";
+												fail("dt must be positive",c);
 												break;
 											}
 											let x = BigIntWrapper.sub(BigIntWrapper.fromInt(c.j),_g);
 											let y = BigIntWrapper.sub(BigIntWrapper.fromInt(c.i),_g1);
 											if(BigIntWrapper.lt(x,BigIntWrapper.fromInt(0)) || BigIntWrapper.geq(x,BigIntWrapper.fromInt(32))) {
-												this.failReason = "x out of bounds: " + BigIntWrapper.toString(x);
+												fail("x out of bounds: " + BigIntWrapper.toString(x),c);
 												break;
 											}
 											if(BigIntWrapper.lt(y,BigIntWrapper.fromInt(0)) || BigIntWrapper.geq(y,BigIntWrapper.fromInt(32))) {
-												this.failReason = "y out of bounds: " + BigIntWrapper.toString(y);
+												fail("y out of bounds: " + BigIntWrapper.toString(y),c);
 												break;
 											}
-											let t = BigIntWrapper.sub(BigIntWrapper.fromInt(f.t),_g2);
+											let t = BigIntWrapper.sub(BigIntWrapper.fromInt(f.t - 1),_g2);
 											if(BigIntWrapper.lt(t,BigIntWrapper.fromInt(0))) {
-												this.failReason = "try to warp to negative time: " + BigIntWrapper.toString(t);
+												fail("try to warp to negative time: " + BigIntWrapper.toString(t),c);
 												break;
 											}
+											warpTargets.push({ i : BigIntWrapper.toInt(y), j : BigIntWrapper.toInt(x), t : BigIntWrapper.toInt(t), data : _g5});
+											nothingHappened = false;
 										} while(false);
 									}
 								}
@@ -438,19 +638,60 @@ class World {
 					break;
 				}
 			}
+			let _g3 = 0;
+			while(_g3 < warpTargets.length) {
+				let w1 = warpTargets[_g3];
+				++_g3;
+				let _g = 0;
+				while(_g < warpTargets.length) {
+					let w2 = warpTargets[_g];
+					++_g;
+					if(w1 == w2) {
+						break;
+					}
+					if(w1.t != w2.t) {
+						fail("tried to warp to different times: " + w1.t + " and " + w2.t);
+						break;
+					}
+					if(w1.i == w2.i && w1.j == w2.j && !Type.enumEq(w1.data,w2.data)) {
+						fail("tried to write different data at (" + w1.i + ", " + w1.j + ", t=" + w1.t + "): " + _$Main_CellDataTools.toString(w1.data) + " and " + _$Main_CellDataTools.toString(w2.data),f.cellAt(w1.i,w1.j));
+						break;
+					}
+				}
+			}
 			if(this.failReason != "") {
 				break;
 			}
-			let _g3 = 0;
-			let _g4 = f.cells;
-			while(_g3 < _g4.length) {
-				let c = _g4[_g3];
-				++_g3;
-				if(c.willBeRemoved) {
-					c.data = CellData.None;
+			if(nothingHappened) {
+				if(++nothingHappenedCount >= 10) {
+					break;
 				}
-				if(c.next != null) {
-					c.data = c.next;
+			}
+			if(warpTargets.length > 0 && this.result == CellData.None) {
+				let t = warpTargets[0].t;
+				while(this.times.length > t + 1) this.times.pop();
+				f = this.times[t].copy();
+				let _g = 0;
+				while(_g < warpTargets.length) {
+					let w = warpTargets[_g];
+					++_g;
+					let c = f.cellAt(w.i,w.j);
+					c.data = w.data;
+					c.selected = true;
+				}
+				this.times.pop();
+			} else {
+				let _g = 0;
+				let _g1 = f.cells;
+				while(_g < _g1.length) {
+					let c = _g1[_g];
+					++_g;
+					if(c.willBeRemoved) {
+						c.data = CellData.None;
+					}
+					if(c.next != null) {
+						c.data = c.next;
+					}
 				}
 			}
 		}
@@ -524,7 +765,7 @@ class Main extends pot_core_App {
 		this._hx_constructor(canvas,inputTarget,captureKey,captureWheel);
 	}
 	_hx_constructor(canvas,inputTarget,captureKey,captureWheel) {
-		this.inputs = [BigIntWrapper.fromInt(0),BigIntWrapper.fromInt(0)];
+		this.inputs = [BigIntWrapper.fromInt(1),BigIntWrapper.fromInt(1)];
 		this.cursorJ = 16;
 		this.cursorI = 16;
 		this.tick = 0;
@@ -544,6 +785,16 @@ class Main extends pot_core_App {
 	setup() {
 		this.input.scalingMode = 1;
 		this.g = new pot_graphics_bitmap_BitmapGraphics(this.canvas.getContext("2d",null));
+		let _gthis = this;
+		window.document.getElementById("import").onclick = function() {
+			return window.navigator.clipboard.readText().then(function(text) {
+				_gthis.w.input.fromString(text);
+				return _gthis.mode = Mode.Edit;
+			});
+		};
+		window.document.getElementById("export").onclick = function() {
+			return window.navigator.clipboard.writeText(_gthis.w.input.toString());
+		};
 		this.pot.start();
 	}
 	update() {
@@ -594,7 +845,11 @@ class Main extends pot_core_App {
 		this.processInput();
 	}
 	key(keyValue) {
-		return pot_input_Keyboard.isKeyDown(this.input.keyboard,keyValue);
+		if(!pot_input_Keyboard.isKeyDown(this.input.keyboard,keyValue)) {
+			return pot_input_Keyboard.isKeyDown(this.input.keyboard,keyValue.toUpperCase());
+		} else {
+			return true;
+		}
 	}
 	editText() {
 		let _gthis = this;
@@ -754,6 +1009,12 @@ class Main extends pot_core_App {
 						this.cursorI = cell.i;
 						this.cursorJ = cell.j;
 						this.dragging = true;
+						if(this.selectedCells(f).length == 1 && cell.selected) {
+							this.mode = Mode.Write(cell);
+							this.textInput = _$Main_CellDataTools.toString(cell.data);
+							this.dragging = false;
+							break;
+						}
 						this.selecting = !cell.selected;
 						if(!pot_input_Keyboard.isShiftDown(kb) && !cell.selected) {
 							this.clearSelection(f);
@@ -771,6 +1032,7 @@ class Main extends pot_core_App {
 					if(cellToEdit != null) {
 						this.mode = Mode.Write(cellToEdit);
 						this.textInput = _$Main_CellDataTools.toString(cellToEdit.data);
+						this.dragging = false;
 						break;
 					}
 					let cut = this.key("x");
@@ -869,6 +1131,8 @@ class Main extends pot_core_App {
 					this.runSimulation();
 					this.mode = Mode.View;
 					this.tick = 0;
+					this.playing = true;
+					this.frameCount = 10;
 					break;
 				}
 			} while(false);
@@ -909,66 +1173,12 @@ class Main extends pot_core_App {
 			let _g2 = _g.cell;
 			this.editText();
 			_g2.text = this.textInput == "" ? " " : this.textInput;
-			if(this.key("Escape")) {
+			if(this.key("Escape") || mouse.dright == 1) {
 				_g2.text = "";
 				this.mode = Mode.Edit;
-			} else if(this.key("e")) {
+			} else if(this.key("e") || mouse.dleft == 1) {
 				_g2.text = "";
-				let tmp;
-				switch(this.textInput) {
-				case "":
-					tmp = CellData.None;
-					break;
-				case "%":
-					tmp = CellData.Op(4);
-					break;
-				case "*":
-					tmp = CellData.Op(2);
-					break;
-				case "+":
-					tmp = CellData.Op(0);
-					break;
-				case "-":
-					tmp = CellData.Op(1);
-					break;
-				case "/":
-					tmp = CellData.Op(3);
-					break;
-				case "<":
-					tmp = CellData.Arrow(0,-1);
-					break;
-				case "=":
-					tmp = CellData.Op(5);
-					break;
-				case ">":
-					tmp = CellData.Arrow(0,1);
-					break;
-				case "@":
-					tmp = CellData.Op(7);
-					break;
-				case "A":
-					tmp = CellData.Op(8);
-					break;
-				case "B":
-					tmp = CellData.Op(9);
-					break;
-				case "S":
-					tmp = CellData.Op(10);
-					break;
-				case "^":
-					tmp = CellData.Arrow(-1,0);
-					break;
-				case "v":
-					tmp = CellData.Arrow(1,0);
-					break;
-				case "≠":
-					tmp = CellData.Op(6);
-					break;
-				default:
-					let num = Std.parseInt(this.textInput);
-					tmp = num != null ? CellData.Int(BigIntWrapper.fromInt(num)) : CellData.None;
-				}
-				_g2.data = tmp;
+				_g2.data = Cell.parseData(this.textInput);
 				this.mode = Mode.Edit;
 			}
 			break;
@@ -976,13 +1186,14 @@ class Main extends pot_core_App {
 			if(this.key(" ")) {
 				this.playing = !this.playing;
 			}
+			let multiplier = pot_input_Keyboard.isControlDown(kb) ? 100 : pot_input_Keyboard.isShiftDown(kb) ? 10 : 1;
 			if(this.key("a")) {
-				let b = this.tick - 1;
+				let b = this.tick - multiplier;
 				this.tick = 0 > b ? 0 : b;
 			}
-			if(this.key("d") || this.playing && this.frameCount % 10 == 0) {
+			if(this.key("d") || this.playing && (multiplier > 1 || this.frameCount % 10 == 0)) {
 				let a = this.w.ticks.length - 1;
-				let b = this.tick + 1;
+				let b = this.tick + Math.ceil(multiplier / (this.playing ? 10 : 1));
 				this.tick = a < b ? a : b;
 			}
 			if(this.playing && this.tick == this.w.ticks.length - 1) {
@@ -994,7 +1205,7 @@ class Main extends pot_core_App {
 			if(this.key("e")) {
 				this.tick = this.w.ticks.length - 1;
 			}
-			if(this.key("Escape")) {
+			if(this.key("Escape") || this.key("Enter")) {
 				this.mode = Mode.Edit;
 			}
 			break;
@@ -1019,6 +1230,7 @@ class Main extends pot_core_App {
 		this.g.fillColorImpl(0,0,0,1);
 		this.g.c2d.textBaseline = "top";
 		this.g.c2d.textAlign = "left";
+		let y = 0.0;
 		let _g = this.mode;
 		let text;
 		switch(_g._hx_index) {
@@ -1036,28 +1248,31 @@ class Main extends pot_core_App {
 			text = "Editing (" + _g1.i + ", " + _g1.j + ")";
 			break;
 		case 4:
-			text = "View";
+			text = "Viewing Result";
 			break;
 		}
 		this.g.c2d.fillText("Mode: " + text,0,0.0);
+		y = 18.;
+		y = 27.;
 		let _g2 = this.mode;
 		switch(_g2._hx_index) {
 		case 0:
 			this.g.c2d.fillText("RMB & Drag: Pan",0,27.);
 			this.g.c2d.fillText("Wheel: Zoom",0,45.);
 			this.g.c2d.fillText("LMB & Drag: (De)Select",0,72.);
-			this.g.c2d.fillText("ESC: Deselect All",0,90.);
-			this.g.c2d.fillText("WASD, HJKL, Arrows: Move",0,117.);
-			this.g.c2d.fillText("E: Edit Cell",0,144.);
-			this.g.c2d.fillText("DEL: Erase Cells",0,171.);
-			this.g.c2d.fillText("X: Cut Cells",0,189.);
-			this.g.c2d.fillText("C: Copy Cells",0,207.);
-			this.g.c2d.fillText("V: Paste Cells",0,225.);
-			let text1 = "1: Edit Input A ( = " + BigIntWrapper.toString(this.inputs[0]) + ")";
-			this.g.c2d.fillText(text1,0,252.);
-			let text2 = "2: Edit Input B ( = " + BigIntWrapper.toString(this.inputs[1]) + ")";
-			this.g.c2d.fillText(text2,0,270.);
-			this.g.c2d.fillText("Enter: Run Simulation",0,297.);
+			this.g.c2d.fillText("- Hold Shift: Keep Selection",0,90.);
+			this.g.c2d.fillText("ESC: Deselect All",0,108.);
+			this.g.c2d.fillText("WASD, HJKL, Arrows: Move",0,135.);
+			this.g.c2d.fillText("E: Edit Cell",0,162.);
+			this.g.c2d.fillText("DEL: Erase Cells",0,189.);
+			this.g.c2d.fillText("X: Cut Cells",0,207.);
+			this.g.c2d.fillText("C: Copy Cells",0,225.);
+			this.g.c2d.fillText("V: Paste Cells",0,243.);
+			let text1 = "1: Edit Input A (= " + BigIntWrapper.toString(this.inputs[0]) + ")";
+			this.g.c2d.fillText(text1,0,270.);
+			let text2 = "2: Edit Input B (= " + BigIntWrapper.toString(this.inputs[1]) + ")";
+			this.g.c2d.fillText(text2,0,288.);
+			this.g.c2d.fillText("Enter: Run Simulation",0,315.);
 			break;
 		case 1:
 			this.g.c2d.fillText("AB".charAt(_g2.index) + " = " + this.textInput,0,27.);
@@ -1076,18 +1291,47 @@ class Main extends pot_core_App {
 			this.g.c2d.fillText("HJKL, Arrows: Arrow",0,117.);
 			this.g.c2d.fillText("0-9: Integer",0,144.);
 			this.g.c2d.fillText("Backspace: Erace Last",0,171.);
-			this.g.c2d.fillText("E: Confirm",0,198.);
-			this.g.c2d.fillText("ESC: Cancel",0,216.);
+			this.g.c2d.fillText("E, LMB: Confirm",0,198.);
+			this.g.c2d.fillText("ESC, RMB: Cancel",0,216.);
 			break;
 		case 4:
-			this.g.c2d.fillText("Showing Tick " + (this.tick + 1) + "/" + this.w.ticks.length,0,27.);
-			this.g.c2d.fillText("time = " + (this.w.ticks[this.tick].t + 1),0,45.);
-			this.g.c2d.fillText("A: Prev Tick",0,72.);
-			this.g.c2d.fillText("D: Next Tick",0,90.);
-			this.g.c2d.fillText("Q: First Tick",0,108.);
-			this.g.c2d.fillText("E: Last Tick",0,126.);
-			this.g.c2d.fillText("Space: Play/Pause",0,144.);
-			this.g.c2d.fillText("ESC: Edit mode",0,171.);
+			if(this.w.failReason != "") {
+				this.g.fillColorImpl(1,0,0,1);
+				let _g = 0;
+				let _g1 = StringTools.trim(this.w.failReason).split("\n");
+				while(_g < _g1.length) {
+					this.g.c2d.fillText(_g1[_g++],0,y);
+					y += 18.0;
+				}
+				y += 9.;
+				this.g.fillColorImpl(0,0,0,1);
+			}
+			this.g.c2d.fillText("Showing Tick " + (this.tick + 1) + "/" + this.w.ticks.length,0,y);
+			y += 18.0;
+			this.g.c2d.fillText("time = " + (this.w.ticks[this.tick].t + 1),0,y);
+			y += 18.0;
+			y += 9.;
+			let kb = this.input.keyboard;
+			let postfix = pot_input_Keyboard.isControlDown(kb) ? " x100" : pot_input_Keyboard.isShiftDown(kb) ? " x10" : "";
+			this.g.c2d.fillText("A: Prev Tick " + postfix,0,y);
+			y += 18.0;
+			this.g.c2d.fillText("D: Next Tick " + postfix,0,y);
+			y += 18.0;
+			this.g.c2d.fillText("Q: First Tick",0,y);
+			y += 18.0;
+			this.g.c2d.fillText("E: Last Tick",0,y);
+			y += 18.0;
+			this.g.c2d.fillText("Space: Play/Pause",0,y);
+			y += 18.0;
+			y += 9.;
+			this.g.c2d.fillText("Hold Shift: x10 faster",0,y);
+			y += 18.0;
+			this.g.c2d.fillText("Hold Ctrl: x100 faster",0,y);
+			y += 18.0;
+			y += 9.;
+			this.g.c2d.fillText("Enter: Back to Edit",0,y);
+			y += 18.0;
+			this.g.c2d.fillText("ESC: Back to Edit",0,y);
 			break;
 		}
 	}
@@ -1196,6 +1440,70 @@ class Std {
 	}
 }
 Std.__name__ = true;
+class StringTools {
+	static isSpace(s,pos) {
+		let c = HxOverrides.cca(s,pos);
+		if(!(c > 8 && c < 14)) {
+			return c == 32;
+		} else {
+			return true;
+		}
+	}
+	static ltrim(s) {
+		let l = s.length;
+		let r = 0;
+		while(r < l && StringTools.isSpace(s,r)) ++r;
+		if(r > 0) {
+			return HxOverrides.substr(s,r,l - r);
+		} else {
+			return s;
+		}
+	}
+	static rtrim(s) {
+		let l = s.length;
+		let r = 0;
+		while(r < l && StringTools.isSpace(s,l - r - 1)) ++r;
+		if(r > 0) {
+			return HxOverrides.substr(s,0,l - r);
+		} else {
+			return s;
+		}
+	}
+	static trim(s) {
+		return StringTools.ltrim(StringTools.rtrim(s));
+	}
+}
+StringTools.__name__ = true;
+class Type {
+	static enumEq(a,b) {
+		if(a == b) {
+			return true;
+		}
+		try {
+			let e = a.__enum__;
+			if(e == null || e != b.__enum__) {
+				return false;
+			}
+			if(a._hx_index != b._hx_index) {
+				return false;
+			}
+			let enm = $hxEnums[e];
+			let params = enm.__constructs__[a._hx_index].__params__;
+			let _g = 0;
+			while(_g < params.length) {
+				let f = params[_g];
+				++_g;
+				if(!Type.enumEq(a[f],b[f])) {
+					return false;
+				}
+			}
+		} catch( _g ) {
+			return false;
+		}
+		return true;
+	}
+}
+Type.__name__ = true;
 class haxe_Exception extends Error {
 	constructor(message,previous,native) {
 		super(message);
