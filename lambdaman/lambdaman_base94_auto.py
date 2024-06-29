@@ -10,6 +10,7 @@ from convert_string import from_icfp
 
 
 NAIVE_DFS_PATH = os.path.join(os.path.dirname(__file__), "lambdaman_naive_dfs.py")
+DIAM_DFS_PATH = os.path.join(os.path.dirname(__file__), "lambdaman_diameter_dfs.py")
 
 
 def main():
@@ -33,7 +34,7 @@ def main():
         print("Problem ID:", i)
         with open(f"lambdaman_data/{i:02d}.txt") as f:
             text = f.read().strip()
-        res = subprocess.check_output([sys.executable, NAIVE_DFS_PATH], input=text, text=True).strip()
+        res = subprocess.check_output([sys.executable, DIAM_DFS_PATH], input=text, text=True).strip()
 
         code = generate_code(i, res)
         print(code)
