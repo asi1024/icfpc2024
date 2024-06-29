@@ -220,6 +220,10 @@ int main(int argc, char** argv) {
     } else {
         stride = 1;
     }
+    if (stride != 1 && stride != 2) {
+        fprintf(stderr, "stride must be 1 or 2\n");
+        return 1;
+    }
 
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -231,7 +235,7 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "H: %d, W: %d, start: (%d, %d)\n", H, W, sy, sx);
 
-    int steps = 1000000;
+    int steps = 999000 / stride;
     int sota = 0;
     for (;;) {
         auto [p, roots] = gen_prime_and_primitive_roots(rng, 100);
@@ -243,9 +247,15 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
                 fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
 
-                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I\" BD B%% vs I%% SL>FO B$ B$ vf vf B%% B* vs %s %s %s\n",
-                       problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
-                );
+                if (stride == 1) {
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I\" BD B%% vs I%% SL>FO B$ B$ vf vf B%% B* vs %s %s %s\n",
+                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
+                    );
+                } else {
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I# BD B* I# B%% vs I%% SLL>>FFOO B$ B$ vf vf B%% B* vs %s %s %s\n",
+                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
+                    );
+                }
                 return 0;
             }
             if (sota < n_visited) {

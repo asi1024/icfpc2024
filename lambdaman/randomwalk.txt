@@ -12,3 +12,14 @@ B$ B$
         BT I" BD B% vs I% SO>FL
         B$ B$ vf vf B% B* vs <k> <p>
   <s>
+
+
+stride=2 のとき
+B$ B$
+  Lf B$ vf vf
+  Lf Ls
+    ? B= vs I" S  #stop
+      B.
+        BT I# BD B* I# B% vs I% SO>FL
+        B$ B$ vf vf B% B* vs <k> <p>
+  <s>
