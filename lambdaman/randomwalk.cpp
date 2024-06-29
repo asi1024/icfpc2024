@@ -50,14 +50,22 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
 
     int y = sy, x = sx;
     visited[y][x] = true;
+
+    std::vector<int> dirs;
     for (;;) {
         if (rng.exhausted()) {
             break;
         }
-        --steps;
         int dir = rng.next();
-        //printf("%c", "RULD"[dir]);
+        dirs.push_back(dir);
+    }
+    if (dirs.size() != steps) {
+        fprintf(stderr, "steps mismatch (%d vs %d)\n", (int)dirs.size(), steps);
+        throw 42;
+    }
+    std::reverse(dirs.begin(), dirs.end());
 
+    for (int dir : dirs) {
         int y2 = y + DY[dir];
         int x2 = x + DX[dir];
         if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
@@ -67,11 +75,6 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
             y = y + DY[dir] * stride;
             x = x + DX[dir] * stride;
         }
-    }
-    //puts("");
-    if (steps != 0) {
-        fprintf(stderr, "steps mismatch\n");
-        throw 42;
     }
 
     int n_visited = 0;
@@ -220,6 +223,10 @@ int main(int argc, char** argv) {
     } else {
         stride = 1;
     }
+    if (stride != 1 && stride != 2) {
+        fprintf(stderr, "stride must be 1 or 2\n");
+        return 1;
+    }
 
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
@@ -231,7 +238,7 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "H: %d, W: %d, start: (%d, %d)\n", H, W, sy, sx);
 
-    int steps = 1000000;
+    int steps = 999000 / stride;
     int sota = 0;
     for (;;) {
         auto [p, roots] = gen_prime_and_primitive_roots(rng, 100);
@@ -243,9 +250,15 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
                 fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
 
-                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I\" BD B%% vs I%% SL>FO B$ B$ vf vf B%% B* vs %s %s %s\n",
-                       problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
-                );
+                if (stride == 1) {
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I\" BD B%% vs I%% SL>FO %s\n",
+                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
+                    );
+                } else {
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
+                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
+                    );
+                }
                 return 0;
             }
             if (sota < n_visited) {
