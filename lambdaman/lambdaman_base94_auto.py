@@ -7,6 +7,7 @@ import sys
 
 from bigint_code import generate_code
 from convert_string import from_icfp
+from lambdaman import lambdaman_tree
 
 
 NAIVE_DFS_PATH = os.path.join(os.path.dirname(__file__), "lambdaman_naive_dfs.py")
@@ -32,11 +33,15 @@ def main():
 
     for i in target:
         print("Problem ID:", i)
-        with open(f"lambdaman_data/{i:02d}.txt") as f:
-            text = f.read().strip()
-        res = subprocess.check_output([sys.executable, DIAM_DFS_PATH], input=text, text=True).strip()
 
-        code = generate_code(i, res)
+        if i in (4, 11, 12, 13, 14, 15):
+            code = lambdaman_tree.solve(i)
+        else:
+            with open(f"lambdaman_data/{i:02d}.txt") as f:
+                text = f.read().strip()
+            res = subprocess.check_output([sys.executable, DIAM_DFS_PATH], input=text, text=True).strip()
+            code = generate_code(i, res)
+
         print(code)
         if args.dry_run:
             continue
