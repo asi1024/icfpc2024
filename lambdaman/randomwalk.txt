@@ -1,0 +1,14 @@
+ランダムウォークくん
+
+乱数生成器: s % 4, (ks mod p) % 4, (k^2s mod p) % 4, ... で、k^ns mod p = 1 になったら止める
+ステップ数は s, k, p から暗黙に決まる。ステップ数が決まっているなら k = s^(-step) とするとよい。
+これにより、ステップ数を関数にとる必要がなくなって、ハッピー
+
+B$ B$
+  Lf B$ vf vf
+  Lf Ls
+    ? B= vs I" S  #stop
+      B.
+        BT I" BD B% vs I% SO>FL
+        B$ B$ vf vf B% B* vs <k> <p>
+  <s>
