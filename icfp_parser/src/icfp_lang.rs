@@ -143,7 +143,7 @@ pub fn parse_token(s: &str) -> Token {
 }
 
 pub fn parse_program(s: &str) -> Vec<Token> {
-    s.split_whitespace().map(parse_token).collect()
+    s.split_whitespace().filter(|x| !x.starts_with("#")).map(parse_token).collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

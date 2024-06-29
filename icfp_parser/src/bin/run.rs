@@ -1,9 +1,10 @@
+use std::io::Read;
 use icfp_parser::icfp_lang;
 
 fn main() {
-    // read a line from stdin
+    // read the entire stdin
     let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    std::io::stdin().read_to_string(&mut input).unwrap();
 
     // parse the input
     let toks = icfp_lang::parse_program(&input);
