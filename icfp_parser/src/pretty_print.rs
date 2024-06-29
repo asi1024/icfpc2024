@@ -54,7 +54,7 @@ impl PPTree {
     }
 }
 
-fn build_pptree(expr: &Expr) -> PPTree {
+pub fn build_pptree(expr: &Expr) -> PPTree {
     match expr {
         Expr::Boolean(b) => PPTree::Boolean(*b),
         Expr::Integer(i) => PPTree::Integer(i.to_string()),
@@ -109,7 +109,7 @@ fn convert_let(tree: &mut PPTree) {
     }
 }
 
-fn flatten_binary(tree: &mut PPTree) {
+pub fn flatten_binary(tree: &mut PPTree) {
     match tree {
         PPTree::Unary(_, child) => flatten_binary(child),
         PPTree::Binary(op, children) => {
