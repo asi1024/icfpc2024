@@ -50,14 +50,22 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
 
     int y = sy, x = sx;
     visited[y][x] = true;
+
+    std::vector<int> dirs;
     for (;;) {
         if (rng.exhausted()) {
             break;
         }
-        --steps;
         int dir = rng.next();
-        //printf("%c", "RULD"[dir]);
+        dirs.push_back(dir);
+    }
+    if (dirs.size() != steps) {
+        fprintf(stderr, "steps mismatch (%d vs %d)\n", (int)dirs.size(), steps);
+        throw 42;
+    }
+    std::reverse(dirs.begin(), dirs.end());
 
+    for (int dir : dirs) {
         int y2 = y + DY[dir];
         int x2 = x + DX[dir];
         if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
@@ -67,11 +75,6 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
             y = y + DY[dir] * stride;
             x = x + DX[dir] * stride;
         }
-    }
-    //puts("");
-    if (steps != 0) {
-        fprintf(stderr, "steps mismatch\n");
-        throw 42;
     }
 
     int n_visited = 0;
@@ -248,11 +251,11 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
 
                 if (stride == 1) {
-                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I\" BD B%% vs I%% SL>FO B$ B$ vf vf B%% B* vs %s %s %s\n",
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I\" BD B%% vs I%% SL>FO %s\n",
                         problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
                     );
                 } else {
-                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. BT I# BD B* I# B%% vs I%% SLL>>FFOO B$ B$ vf vf B%% B* vs %s %s %s\n",
+                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
                         problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
                     );
                 }
