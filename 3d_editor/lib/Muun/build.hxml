@@ -1,0 +1,8 @@
+-cp src
+# -D analyzer-optimize
+-main MuunTest
+-D js-es=6
+--js bin/main.js
+# --python bin/main.py
+# --jvm bin/main.jar
+# --java bin/java

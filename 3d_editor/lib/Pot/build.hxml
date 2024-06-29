@@ -1,0 +1,9 @@
+-cp src
+-cp ../Muun/src
+-cp ../HGSL/src
+-cp ../Std/src
+-D analyzer-optimize
+-main test.PotTest
+-js bin/main.js
+# --jvm bin/main.jar
+# --display memory
