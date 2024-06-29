@@ -296,6 +296,7 @@ class Main extends App {
 	final inputs:Array<BigInt> = [0, 0];
 
 	override function setup():Void {
+		input.scalingMode = Canvas;
 		g = new BitmapGraphics(canvas.getContext2d());
 		pot.start();
 	}

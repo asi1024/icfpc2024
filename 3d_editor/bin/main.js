@@ -542,6 +542,7 @@ class Main extends pot_core_App {
 		super._hx_constructor(canvas,inputTarget,captureKey,captureWheel);
 	}
 	setup() {
+		this.input.scalingMode = 1;
 		this.g = new pot_graphics_bitmap_BitmapGraphics(this.canvas.getContext("2d",null));
 		this.pot.start();
 	}
