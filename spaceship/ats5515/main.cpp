@@ -176,11 +176,6 @@ int testcase_index = -1;
 struct Solver {
 	Timer timer;
 
-	void init() {
-	}
-
-	void SA() {
-	}
 	static bool can_be_at_1d(int dx, int vx, int turn) {
 		int tri_number = (turn * (turn + 1) / 2);
 		int base = vx * turn;
@@ -372,7 +367,7 @@ struct Solver {
 		long long dx = x1 - x2;
 		long long dy = y1 - y2;
 		// return abs(dx) + abs(dy);
-		// return pow(dx * dx + dy * dy, 0.7);
+		// return pow(dx * dx + dy * dy, 0.68);
 		// return sqrt(dx * dx + dy * dy);
 		return dx * dx + dy * dy;
 	}
@@ -381,7 +376,7 @@ struct Solver {
 		double score = 0;
 		double bestscore = 0;
 		double st = timer.get();
-		double timelimit = st + 60;
+		double timelimit = st + 240;
 		double tcoef = 1.0 / (timelimit - st);
 		int cnt = 0;
 		double log_interval_time = (timelimit - st) / 10;
@@ -396,9 +391,9 @@ struct Solver {
 			T0 = 10;
 		} else if (testcase_index == 24) {
 			T0 = 450000000;
-			// T0 = 5000;
+			T0 = 200000;
 		} else if (testcase_index == 23) {
-			T0 = 10000000;
+			T0 = 50000000;
 		} else if (testcase_index == 22) {
 			T0 = 300 / 60;
 		} else if (testcase_index == 21) {
@@ -411,7 +406,7 @@ struct Solver {
 		} else if (testcase_index == 18) {
 			T0 = 300000 / 2000;
 		} else if (testcase_index == 17) {
-			T0 = 500;
+			T0 = 500 / 10;
 		} else if (testcase_index == 16) {
 			T0 = 60;
 		} else if (testcase_index == 15) {
@@ -420,7 +415,8 @@ struct Solver {
 		while (true) {
 			double ti = timer.get();
 			if (ti > timelimit) break;
-
+			// cnt++;
+			// if (cnt >= 1000) break;
 			T = (timelimit - ti) * tcoef;
 			T = T0 * T;
 			if (ti > next_log_timing) {
@@ -532,7 +528,7 @@ struct Solver {
 				// 	int dx = destX[i + 1] - destX[i];
 				// 	int dy = destY[i + 1] - destY[i];
 				// 	eval += min_turns(dx, dy, vx, vy);
-				eval +=  (abs(vx) + abs(vy));
+				eval += 0.1 * (abs(vx) + abs(vy));
 			}
 			// eval += vx * vx + vy * vy;
 		}
@@ -581,12 +577,17 @@ struct Solver {
 			int mnj = -1;
 			for (int j = 0; j < destX.size(); j++) {
 				if (!visited[j]) {
-					int dx = destX[j] - x;
-					int dy = destY[j] - y;
+					double dx = destX[j] - x;
+					double dy = destY[j] - y;
 					long long score = 0;
 
-					score = (long long)dx * dx + (long long)dy * dy;
-					// score = abs(dx) + abs(dy) + rnd.nextDouble() * 7; // ガチャ
+					// score = abs(dx) + abs(dy) - 2 * dy;
+					score = abs(dx) + abs(dy);
+					// score -= 2.1 * max(abs(destX[j]), abs(destY[j]));
+					// score += 0.01 * ((long long)dx * dx + (long long)dy * dy);
+					//  score = sqrt((long long)dx * dx + (long long)dy * dy) + rnd.nextDouble() * 3.0;
+					//  score = abs(dx) + abs(dy) + rnd.nextDouble() * 3.0; // ガチャ
+					//  score += rnd.nextDouble() * 8.0;
 					if (mnscore > score) {
 						mnscore = score;
 						mnj = j;
@@ -597,7 +598,10 @@ struct Solver {
 			visited[mnj] = 1;
 			x = destX[mnj];
 			y = destY[mnj];
+			// cerr << x << " " << y << endl;
 		}
+
+		// swap(order[0], order[1]);
 
 		TSP(order);
 
@@ -609,8 +613,9 @@ struct Solver {
 		int mnx, mxx;
 		int mny, mxy;
 
-		int width = 100;
-		int max_transition = 30;
+		int width = 1000;
+		int max_transition = 40;
+		int extra_turns = 15;
 
 		vector<vector<BeamState> > beams(destX.size() + 1);
 		beams[0].emplace_back(0, 0, 0, -1);
@@ -624,6 +629,7 @@ struct Solver {
 			int dx = destX[pos_index] - x;
 			int dy = destY[pos_index] - y;
 			int best_turn = (int)1e9;
+			beams[i + 1].reserve(beams[i].size() * max_transition * extra_turns);
 			for (int j = 0; j < beams[i].size(); j++) {
 				vx = beams[i][j].vx;
 				vy = beams[i][j].vy;
@@ -636,7 +642,7 @@ struct Solver {
 				// if (i == 0) {
 				// 	cerr << i << " " << j << " " << vx << " " << vy << " " << turns_so_far << " " << turn << endl;
 				// }
-				for (int k = 0; k < 5; k++) {
+				for (int k = 0; k < extra_turns; k++) {
 					int tt = turn + k;
 					if (best_turn + 40 <= turns_so_far + tt) break;
 					if (k == 0 || (can_be_at_1d(dx, vx, tt) && can_be_at_1d(dy, vy, tt))) {
@@ -660,11 +666,13 @@ struct Solver {
 					}
 				}
 			}
+			// if (i > 20) width = 20;
 			if (beams[i + 1].size() > width) {
 				nth_element(beams[i + 1].begin(), beams[i + 1].begin() + width, beams[i + 1].end());
 				// sort(beams[i + 1].begin(), beams[i + 1].end());
 				beams[i + 1].resize(width);
 			}
+			beams[i + 1].shrink_to_fit();
 
 			x = destX[pos_index];
 			y = destY[pos_index];
