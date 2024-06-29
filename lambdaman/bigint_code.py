@@ -25,7 +25,7 @@ def generate_code_by_one(problem_id: int, sol: str) -> str:
         v = convert_map[sol[i]]
         n = n * 4 + v
 
-    prefix = convert_string.to_icfp(f"solve lambdaman{problem_id} ")
+    prefix = convert_string.to_icfp(f"solve lambdaman{problem_id} ")[1:]
     num = base94(n)
     prog = f"""B. S{prefix} B$ B$ Lf B$ Lx B$ vf B$ vx vx Lx B$ vf B$ vx vx Lf Ln ? B= vn I! S B. BT I" BD B% vn I% {convert_str} B$ vf B/ vn I% I{num}"""
     return prog
@@ -44,7 +44,7 @@ def generate_code_by_two(problem_id: int, sol: str) -> str:
         v = convert_map[sol[i]]
         n = n * 4 + v
 
-    prefix = convert_string.to_icfp(f"solve lambdaman{problem_id} ")
+    prefix = convert_string.to_icfp(f"solve lambdaman{problem_id} ")[1:]
     num = base94(n)
     prog = f"""B. S{prefix} B$ B$ Lf B$ Lx B$ vf B$ vx vx Lx B$ vf B$ vx vx Lf Ln ? B= vn I! S B. BT I# BD B* I# B% vn I% {convert_str} B$ vf B/ vn I% I{num}"""
     return prog
