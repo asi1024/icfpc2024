@@ -9,6 +9,8 @@ def parse():
     term = s[p]
     assert p < len(s)
     p += 1
+    if term == "<Y>":
+        return "Ycombinator"
     if term[0] == "I":
         x = 0
         for c in term[1:].encode('ascii'):
