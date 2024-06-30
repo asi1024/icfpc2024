@@ -14,6 +14,8 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <thread>
+#include <mutex>
 
 using i64 = long long;
 
@@ -24,7 +26,8 @@ const int DY[] = {0, 1, 0, -1};
 const int DX[] = {1, 0, -1, 0};
 const char DIRNAME[] = "L>FO";  //"RDLU";
 
-bool visited[310][310];
+constexpr int MAX_THREADS = 32;
+bool visited[MAX_THREADS][310][310];
 
 std::string to_base94(i64 x) {
     std::string ret;
@@ -70,15 +73,15 @@ std::pair<std::vector<int>, std::vector<i64>> make_random_seq(i64 s, i64 k, i64 
     return {ret, seeds};
 }
 
-std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride) {
+std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride, int tid) {
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            visited[y][x] = false;
+            visited[tid][y][x] = false;
         }
     }
 
     int y = sy, x = sx;
-    visited[y][x] = true;
+    visited[tid][y][x] = true;
 
     std::vector<int> dirs = make_random_seq(s, k, prime).first;
     if (dirs.size() != steps) {
@@ -93,7 +96,7 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
             if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
                 y = y2;
                 x = x2;
-                visited[y][x] = true;
+                visited[tid][y][x] = true;
             } else {
                 break;
             }
@@ -104,7 +107,7 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     int n_cells = 0;
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            if (visited[y][x]) {
+            if (visited[tid][y][x]) {
                 ++n_visited;
             }
             if (board[y][x] != '#') {
@@ -116,32 +119,32 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     return {n_visited == n_cells, n_visited};
 }
 
-i64 first_visit_time[310][310];
-int first_visit_time_step[310][310];
+i64 first_visit_time[MAX_THREADS][310][310];
+int first_visit_time_step[MAX_THREADS][310][310];
 
-void aux_dfs(int y, int x, std::string& buf) {
+void aux_dfs(int tid, int y, int x, std::string& buf) {
     for (int d = 0; d < 4; ++d) {
         int y2 = y + DY[d];
         int x2 = x + DX[d];
-        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[y2][x2] == -1) {
-            first_visit_time[y2][x2] = -2;
+        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[tid][y2][x2] == -1) {
+            first_visit_time[tid][y2][x2] = -2;
             buf.push_back(DIRNAME[d]);
-            aux_dfs(y2, x2, buf);
+            aux_dfs(tid, y2, x2, buf);
             buf.push_back(DIRNAME[d ^ 2]);
         }
     }
 }
 
-std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride) {
+std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride, int tid) {
     auto [dirs, seeds] = make_random_seq(s, k, prime);
 
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            first_visit_time[y][x] = -1;
+            first_visit_time[tid][y][x] = -1;
         }
     }
     int y = sy, x = sx;
-    first_visit_time[y][x] = 0;
+    first_visit_time[tid][y][x] = 0;
     for (int i = 0; i < (int)dirs.size(); ++i) {
         int dir = dirs[i];
         int y2 = y + DY[dir];
@@ -153,9 +156,9 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
             if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
                 y = y2;
                 x = x2;
-                if (first_visit_time[y][x] < 0) {
-                    first_visit_time[y][x] = i;
-                    first_visit_time_step[y][x] = d;
+                if (first_visit_time[tid][y][x] < 0) {
+                    first_visit_time[tid][y][x] = i;
+                    first_visit_time_step[tid][y][x] = d;
                 }
             } else {
                 break;
@@ -168,7 +171,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
     std::ostringstream oss;
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            if (board[y][x] == '#' || first_visit_time[y][x] < 0 || first_visit_time[y][x] == dirs.size() - 1) {
+            if (board[y][x] == '#' || first_visit_time[tid][y][x] < 0 || first_visit_time[tid][y][x] == dirs.size() - 1) {
                 continue;
             }
 
@@ -176,7 +179,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
             for (int d = 0; d < 4; ++d) {
                 int y2 = y + DY[d];
                 int x2 = x + DX[d];
-                if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[y2][x2] == -1) {
+                if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#' && first_visit_time[tid][y2][x2] == -1) {
                     has_bad_neighbor = true;
                     break;
                 }
@@ -187,9 +190,9 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
             }
 
             std::string buf;
-            aux_dfs(y, x, buf);
+            aux_dfs(tid, y, x, buf);
 
-            insertion_map[first_visit_time[y][x]].emplace_back(first_visit_time_step[y][x], buf);
+            insertion_map[first_visit_time[tid][y][x]].emplace_back(first_visit_time_step[tid][y][x], buf);
             // oss << "? B= vs " << to_base94(seeds[first_visit_time[y][x]]) << " S" << buf << " ";
         }
     }
@@ -212,7 +215,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
 
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            if (board[y][x] != '#' && first_visit_time[y][x] == -1) {
+            if (board[y][x] != '#' && first_visit_time[tid][y][x] == -1) {
                 return std::nullopt;
             }
         }
@@ -341,7 +344,10 @@ std::string problem_id_to_string(int n) {
 }
 
 int main(int argc, char** argv) {
-    std::mt19937 rng(137);
+    if (argc < 6) {
+        fprintf(stderr, "Usage: %s problem_id stride eco_mode num_threads seed\n", argv[0]);
+        return 1;
+    }
 
     H = 0;
     for (;;) {
@@ -384,47 +390,65 @@ int main(int argc, char** argv) {
     int steps = (eco_mode ? 500000 : 999000) / stride;
     int sota = 0;
     int last_rectify_len = 1000;
-    for (;;) {
-        auto [p, roots] = gen_prime_and_primitive_roots(rng, 100, eco_mode);
-        for (i64 k : roots) {
-            i64 s = decide_s(p, k, steps);
-            auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride);
+    std::mutex mtx;
 
-            if (sota < n_visited) {
-                sota = n_visited;
-                fprintf(stderr, "current best: %d / %d\n", n_visited, n_sp);
-            }
+    std::vector<std::thread> threads;
+    int num_threads = atoi(argv[4]);
+    if (num_threads > MAX_THREADS) {
+        fprintf(stderr, "too many threads\n");
+        return 1;
+    }
+    i64 seed_base = atoll(argv[5]);
 
-            if (n_sp - n_visited <= 100) {
-                std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride);
-                if (rectified) {
-                    if (rectified->size() < last_rectify_len) {
-                        last_rectify_len = rectified->size();
-                    } else {
-                        continue;
+    for (int i = 0; i < num_threads; ++i) {
+        threads.push_back(std::thread([&, i] {
+            std::mt19937 rng(seed_base * 123456789 + i);
+            for (;;) {
+                auto [p, roots] = gen_prime_and_primitive_roots(rng, 100, eco_mode);
+                for (i64 k : roots) {
+                    if (sota == n_sp) {
+                        return;
                     }
-                    fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
-                    fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
-                    fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
-                    if (stride == 1) {
-                        printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
-                            problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
-                        );
-                    } else {
-                        printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
-                            problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
-                        );
+                    i64 s = decide_s(p, k, steps);
+                    auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride, i);
+
+                    mtx.lock();
+                    if (sota < n_visited) {
+                        sota = n_visited;
+                        fprintf(stderr, "current best: %d / %d\n", n_visited, n_sp);
                     }
-                    fflush(stdout);
+                    mtx.unlock();
+
+                    if (n_sp - n_visited <= 100) {
+                        std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride, i);
+                        if (rectified && rectified->size() < last_rectify_len) {
+                            mtx.lock();
+                            last_rectify_len = rectified->size();
+                            fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
+                            fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
+                            fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
+                            if (stride == 1) {
+                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
+                                    problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                                );
+                            } else {
+                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
+                                    problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                                );
+                            }
+                            mtx.unlock();
+                        }
+                    }
                 }
             }
-
-            if (n_visited == n_sp) {
-                fprintf(stderr, "done!\n");
-                return 0;
-            }
-        }
+        }));
     }
+
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    fprintf(stderr, "done!\n");
 
     return 0;
 }
