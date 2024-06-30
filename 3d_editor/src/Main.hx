@@ -1,3 +1,4 @@
+import haxe.Timer;
 import js.Browser;
 import muun.la.Vec2;
 import pot.core.App;
@@ -6,9 +7,7 @@ import pot.input.KeyValue;
 
 using StringTools;
 
-inline final SIZE_SHIFT = 5; // 32x32
-inline final SIZE = 1 << SIZE_SHIFT;
-inline final SIZE_MASK = SIZE - 1;
+inline final SIZE = 48;
 inline final SIZE2 = SIZE * SIZE;
 
 enum abstract Op(Int) {
@@ -34,7 +33,7 @@ enum CellData {
 }
 
 private class CellDataTools {
-	public static function toString(data:CellData, render:Bool = false):String {
+	public static function toString(data:CellData, export:Bool = false):String {
 		return switch data {
 			case None:
 				"";
@@ -68,7 +67,7 @@ private class CellDataTools {
 					case Eq:
 						"=";
 					case Neq:
-						render ? "≠" : "#";
+						export ? "#" : "≠";
 					case Warp:
 						"@";
 					case A:
@@ -125,7 +124,7 @@ class Cell {
 				Op(Warp);
 			case "=":
 				Op(Eq);
-			case "≠":
+			case "#" | "≠":
 				Op(Neq);
 			case "<":
 				Arrow(0, -1);
@@ -173,7 +172,7 @@ class Field {
 			var line = "";
 			for (j in mins[1]...maxs[1] + 1) {
 				final data = cellAt(i, j).data;
-				line += " " + (data == None ? "." : data.toString());
+				line += " " + (data == None ? "." : data.toString(true));
 			}
 			res += line.trim() + "\n";
 		}
@@ -198,11 +197,11 @@ class Field {
 	}
 
 	public function cellAt(i:Int, j:Int):Cell {
-		return cells[(i & SIZE_MASK) << SIZE_SHIFT | (j & SIZE_MASK)];
+		return cells[(i % SIZE + SIZE) % SIZE * SIZE + (j % SIZE + SIZE) % SIZE];
 	}
 
 	public function inBounds(i:Int, j:Int):Bool {
-		return i == i & SIZE_MASK && j == j & SIZE_MASK;
+		return i >= 0 && i < SIZE && j >= 0 && j < SIZE;
 	}
 
 	public function copy(dt:Int = 0):Field {
@@ -220,11 +219,16 @@ class World {
 	public final times:Array<Field> = [];
 	public var failReason:String = "";
 	public var result:CellData = None;
+	public var stop:Bool = false;
+	public var finished:Bool = false;
+	public var progress:Int = 0;
 
 	public function new() {
 	}
 
-	public function run(a:BigInt, b:BigInt):Void {
+	public function run(a:BigInt, b:BigInt, maxSteps:Int, instant:Bool = false):Void {
+		stop = false;
+		progress = 0;
 		ticks.clear();
 		times.clear();
 		failReason = "";
@@ -238,7 +242,6 @@ class World {
 				c.data = Int(b);
 			}
 		}
-		final maxSteps = 10000;
 		function fail(msg:String, c:Cell = null):Void {
 			failReason += msg + "\n";
 			if (c != null) {
@@ -246,195 +249,231 @@ class World {
 			}
 		}
 		var nothingHappenedCount = 0;
-		for (tick in 0...maxSteps) {
-			ticks.push(f);
-			times.push(f);
+		finished = false;
+		function nextTick():Void {
+			final st = Timer.stamp();
+			for (iter in 0...maxSteps) {
+				ticks.push(f);
+				times.push(f);
 
-			if (result != None)
-				break;
-
-			f = f.copy(1);
-			var nothingHappened = true;
-
-			inline function writeTo(c:Cell, data:CellData):Void {
-				nothingHappened = false;
-				if (c.next != null) {
-					fail('written twice at (${c.i}, ${c.j})', c);
+				if (!instant && Timer.stamp() > st + 0.1) {
+					break; // to prevent freezing
 				}
-				c.next = data;
-				if (c.data.match(Op(S))) {
-					c.selected = true;
-					if (result != None && !result.equals(data)) {
-						fail('different results written: ${result.toString()} and ${data.toString()}', c);
-					} else {
-						result = data;
+				if (ticks.length >= maxSteps) {
+					fail("maximum ticks reached");
+					finished = true;
+					break;
+				}
+
+				if (result != None) {
+					finished = true;
+					break;
+				}
+
+				f = f.copy(1);
+				var nothingHappened = true;
+
+				inline function writeTo(c:Cell, data:CellData):Void {
+					nothingHappened = false;
+					if (c.next != null) {
+						fail('written twice at (${c.i}, ${c.j})', c);
+					}
+					c.next = data;
+					if (c.data.match(Op(S))) {
+						c.selected = true;
+						if (result != None && !result.equals(data)) {
+							fail('different results written: ${result.toString()} and ${data.toString()}', c);
+						} else {
+							result = data;
+						}
 					}
 				}
-			}
 
-			final warpTargets:Array<{
-				i:Int,
-				j:Int,
-				t:Int,
-				data:CellData
-			}> = [];
+				final warpTargets:Array<{
+					i:Int,
+					j:Int,
+					t:Int,
+					data:CellData
+				}> = [];
 
-			for (c in f.cells) {
-				switch c.data {
-					case None:
-					case Int(a):
-					case Arrow(di, dj):
-						final src = f.cellAt(c.i - di, c.j - dj);
-						final dst = f.cellAt(c.i + di, c.j + dj);
-						if (src.data != None) {
-							writeTo(dst, src.data);
-							src.willBeRemoved = true;
-						}
-					case Op(op):
-						final l = f.cellAt(c.i, c.j - 1);
-						final t = f.cellAt(c.i - 1, c.j);
-						final b = f.cellAt(c.i + 1, c.j);
-						final r = f.cellAt(c.i, c.j + 1);
-						function binOp(f:(x:BigInt, y:BigInt) -> BigInt):Void {
-							switch [l.data, t.data] {
-								case [Int(x), Int(y)]:
-									l.willBeRemoved = true;
-									t.willBeRemoved = true;
-									final res = f(x, y);
-									writeTo(b, Int(res));
-									writeTo(r, Int(res));
-								case _:
+				for (c in f.cells) {
+					switch c.data {
+						case None:
+						case Int(a):
+						case Arrow(di, dj):
+							final src = f.cellAt(c.i - di, c.j - dj);
+							final dst = f.cellAt(c.i + di, c.j + dj);
+							if (src.data != None) {
+								writeTo(dst, src.data);
+								src.willBeRemoved = true;
 							}
-						}
-						function binOpPass(f:(x:CellData, y:CellData) -> Bool):Void {
-							if (l.data != None && t.data != None && f(l.data, t.data)) {
-								l.willBeRemoved = true;
-								t.willBeRemoved = true;
-								writeTo(b, l.data);
-								writeTo(r, t.data);
-							}
-						}
-						switch op {
-							case Add:
-								binOp((x, y) -> x + y);
-							case Sub:
-								binOp((x, y) -> x - y);
-							case Mult:
-								binOp((x, y) -> x * y);
-							case Div:
-								binOp((x, y) -> y == 0 ? {
-									fail("zero division", c);
-									0;
-								} : x / y);
-							case Mod:
-								binOp((x, y) -> y == 0 ? {
-									fail("zero division (mod)", c);
-									0;
-								} : x % y);
-							case Eq | Neq:
-								binOpPass((x, y) -> (switch [x, y] {
-									case [Int(x), Int(y)] if (x == y):
-										true;
-									case [Op(x), Op(y)] if (x == y):
-										true;
-									case _:
-										false;
-								}) == (op == Eq));
-							case Warp:
-								switch [t.data, l.data, r.data, b.data] {
-									case [v, Int(dx), Int(dy), Int(dt)] if (v != None):
-										do {
-											if (dt <= 0) {
-												fail("dt must be positive", c);
-												break;
-											}
-											final x = c.j - dx;
-											final y = c.i - dy;
-											if (x < 0 || x >= SIZE) {
-												fail("x out of bounds: " + x.toString(), c);
-												break;
-											}
-											if (y < 0 || y >= SIZE) {
-												fail("y out of bounds: " + y.toString(), c);
-												break;
-											}
-											final t = (f.t - 1) - dt; // -1 because time alrealy advanced
-											if (t < 0) {
-												fail("try to warp to negative time: " + t.toString(), c);
-												break;
-											}
-											warpTargets.push({
-												i: y.toInt(),
-												j: x.toInt(),
-												t: t.toInt(),
-												data: v
-											});
-											nothingHappened = false;
-										} while (false);
+						case Op(op):
+							final l = f.cellAt(c.i, c.j - 1);
+							final t = f.cellAt(c.i - 1, c.j);
+							final b = f.cellAt(c.i + 1, c.j);
+							final r = f.cellAt(c.i, c.j + 1);
+							function binOp(f:(x:BigInt, y:BigInt) -> BigInt):Void {
+								switch [l.data, t.data] {
+									case [Int(x), Int(y)]:
+										l.willBeRemoved = true;
+										t.willBeRemoved = true;
+										final res = f(x, y);
+										writeTo(b, Int(res));
+										writeTo(r, Int(res));
 									case _:
 								}
-							case A | B | S:
-								// do nothing
+							}
+							function binOpPass(f:(x:CellData, y:CellData) -> Bool):Void {
+								if (l.data != None && t.data != None && f(l.data, t.data)) {
+									l.willBeRemoved = true;
+									t.willBeRemoved = true;
+									writeTo(b, l.data);
+									writeTo(r, t.data);
+								}
+							}
+							switch op {
+								case Add:
+									binOp((x, y) -> x + y);
+								case Sub:
+									binOp((x, y) -> x - y);
+								case Mult:
+									binOp((x, y) -> {
+										final res = x * y;
+										if (res.toString().length > 50000) {
+											fail("value went too big", c);
+											0;
+										} else {
+											res;
+										}
+									});
+								case Div:
+									binOp((x, y) -> y == 0 ? {
+										fail("zero division", c);
+										0;
+									} : x / y);
+								case Mod:
+									binOp((x, y) -> y == 0 ? {
+										fail("zero division (mod)", c);
+										0;
+									} : x % y);
+								case Eq | Neq:
+									binOpPass((x, y) -> (switch [x, y] {
+										case [Int(x), Int(y)] if (x == y):
+											true;
+										case [Op(x), Op(y)] if (x == y):
+											true;
+										case _:
+											false;
+									}) == (op == Eq));
+								case Warp:
+									switch [t.data, l.data, r.data, b.data] {
+										case [v, Int(dx), Int(dy), Int(dt)] if (v != None):
+											do {
+												if (dt <= 0) {
+													fail("dt must be positive", c);
+													break;
+												}
+												final x = c.j - dx;
+												final y = c.i - dy;
+												if (x < 0 || x >= SIZE) {
+													fail("x out of bounds: " + x.toString(), c);
+													break;
+												}
+												if (y < 0 || y >= SIZE) {
+													fail("y out of bounds: " + y.toString(), c);
+													break;
+												}
+												final t = (f.t - 1) - dt; // -1 because time alrealy advanced
+												if (t < 0) {
+													fail("try to warp to negative time: " + t.toString(), c);
+													break;
+												}
+												warpTargets.push({
+													i: y.toInt(),
+													j: x.toInt(),
+													t: t.toInt(),
+													data: v
+												});
+												nothingHappened = false;
+											} while (false);
+										case _:
+									}
+								case A | B | S:
+									// do nothing
+							}
+					}
+				}
+				var submitByWarp = false;
+				for (w1 in warpTargets) {
+					if (times[w1.t].cellAt(w1.i, w1.j).data.match(Op(S))) {
+						result = w1.data;
+						submitByWarp = true;
+					}
+					for (w2 in warpTargets) {
+						if (w1 == w2)
+							break;
+						if (w1.t != w2.t) {
+							fail('tried to warp to different times: ${w1.t} and ${w2.t}');
+							break;
 						}
-				}
-			}
-			var submitByWarp = false;
-			for (w1 in warpTargets) {
-				if (times[w1.t].cellAt(w1.i, w1.j).data.match(Op(S))) {
-					result = w1.data;
-					submitByWarp = true;
-				}
-				for (w2 in warpTargets) {
-					if (w1 == w2)
-						break;
-					if (w1.t != w2.t) {
-						fail('tried to warp to different times: ${w1.t} and ${w2.t}');
-						break;
-					}
-					if (w1.i == w2.i && w1.j == w2.j && !w1.data.equals(w2.data)) {
-						fail('tried to write different data at (${w1.i}, ${w1.j}, t=${w1.t}): ${w1.data.toString()} and ${w2.data.toString()}',
-							f.cellAt(w1.i, w1.j));
-						break;
+						if (w1.i == w2.i && w1.j == w2.j && !w1.data.equals(w2.data)) {
+							fail('tried to write different data at (${w1.i}, ${w1.j}, t=${w1.t}): ${w1.data.toString()} and ${w2.data.toString()}',
+								f.cellAt(w1.i, w1.j));
+							break;
+						}
 					}
 				}
-			}
-			if (failReason != "")
-				break;
-			if (nothingHappened)
-				if (++nothingHappenedCount >= 10)
+				if (failReason != "") {
+					finished = true;
 					break;
-			if (warpTargets.length > 0 && (result == None || submitByWarp)) {
-				final t = warpTargets[0].t;
-				while (times.length > t + 1) {
-					times.pop();
 				}
-				f = times[t].copy();
-				for (w in warpTargets) {
-					final c = f.cellAt(w.i, w.j);
-					c.data = w.data;
-					c.selected = true;
+				if (nothingHappened) {
+					failReason = "stuck without overwriting S";
+					finished = true;
+					break;
 				}
-				times.pop();
-			} else {
-				for (c in f.cells) {
-					if (c.willBeRemoved) {
-						c.data = None;
+				if (warpTargets.length > 0 && (result == None || submitByWarp)) {
+					final t = warpTargets[0].t;
+					while (times.length > t + 1) {
+						times.pop();
 					}
-					if (c.next != null) {
-						c.data = c.next;
+					f = times[t].copy();
+					for (w in warpTargets) {
+						final c = f.cellAt(w.i, w.j);
+						c.data = w.data;
+						c.selected = true;
+					}
+					times.pop();
+				} else {
+					for (c in f.cells) {
+						if (c.willBeRemoved) {
+							c.data = None;
+						}
+						if (c.next != null) {
+							c.data = c.next;
+						}
 					}
 				}
 			}
+			if (stop) {
+				failReason = "interrupted";
+				finished = true;
+			}
+			if (!finished)
+				Browser.window.setTimeout(nextTick);
 		}
+		nextTick();
 	}
 }
 
 enum Mode {
 	Edit;
+	Select;
 	Input(index:Int);
 	Paste;
 	Write(cell:Cell);
 	View;
+	Simulating;
 }
 
 class Main extends App {
@@ -454,6 +493,7 @@ class Main extends App {
 	var cursorI:Int = SIZE >> 1;
 	var cursorJ:Int = SIZE >> 1;
 	final inputs:Array<BigInt> = [1, 1];
+	var maxSteps:Int = 100000;
 
 	override function setup():Void {
 		input.scalingMode = Canvas;
@@ -466,7 +506,9 @@ class Main extends App {
 			});
 		}
 		Browser.document.getElementById("export").onclick = () -> {
-			Browser.window.navigator.clipboard.writeText(w.input.toString());
+			if (Browser.window.confirm("this will overwrite your clipboard.\nokay?")) {
+				Browser.window.navigator.clipboard.writeText(w.input.toString());
+			}
 		}
 		Browser.document.getElementById("import-mod").onclick = () -> {
 			Browser.window.navigator.clipboard.readText().then(text -> {
@@ -490,7 +532,9 @@ class Main extends App {
 			for (c in sel) {
 				f.cellAt(c.i, c.j).data = c.data;
 			}
-			Browser.window.navigator.clipboard.writeText(f.toString());
+			if (Browser.window.confirm("this will overwrite your clipboard.\nokay?")) {
+				Browser.window.navigator.clipboard.writeText(f.toString());
+			}
 		}
 
 		pot.start();
@@ -604,6 +648,16 @@ class Main extends App {
 		}
 	}
 
+	function moveSelection(f:Field, di:Int, dj:Int):Void {
+		final sels = selectedCells(f);
+		for (c in sels) {
+			c.selected = false;
+		}
+		for (c in sels) {
+			f.cellAt(c.i + di, c.j + dj).selected = true;
+		}
+	}
+
 	function clearSelection(f:Field):Void {
 		for (c in f.cells) {
 			c.selected = false;
@@ -637,7 +691,8 @@ class Main extends App {
 	}
 
 	function runSimulation():Void {
-		w.run(inputs[0], inputs[1]);
+		w.run(inputs[0], inputs[1], maxSteps);
+		mode = Simulating;
 	}
 
 	function normalizeCopiedCells():Void {
@@ -662,6 +717,13 @@ class Main extends App {
 		final mouse = input.mouse;
 		final kb = input.keyboard;
 		final f = w.input;
+
+		inline function gotoEdit():Void {
+			mode = Edit;
+			clearSelection(f);
+			f.cellAt(cursorI, cursorJ).selected = true;
+		}
+
 		switch mode {
 			case Edit:
 				inline function editCell(c:Cell):Void {
@@ -676,32 +738,14 @@ class Main extends App {
 						if (mouse.dleft == 1) {
 							cursorI = cell.i;
 							cursorJ = cell.j;
-							dragging = true;
-							if (selectedCells(f).length == 1 && cell.selected) {
-								editCell(cell);
-								break;
-							}
-							selecting = !cell.selected;
-							if (!kb.isShiftDown() && !cell.selected) {
-								clearSelection(f);
-							}
-						}
-						if (!mouse.left)
-							dragging = false;
-						if (mouse.left && dragging) {
-							cursorI = cell.i;
-							cursorJ = cell.j;
-							cell.selected = selecting;
+							clearSelection(f);
+							cell.selected = true;
+							editCell(cell);
+							break;
 						}
 
-						final cellToEdit = if (key("e")) {
-							f.cellAt(cursorI, cursorJ);
-						} else {
-							null;
-						}
-						if (cellToEdit != null) {
-							editCell(cellToEdit);
-							break;
+						if (key("e")) {
+							editCell(f.cellAt(cursorI, cursorJ));
 						}
 
 						final cut = key("x");
@@ -723,25 +767,25 @@ class Main extends App {
 						}
 					}
 					if (key("w") || key("k") || key(ArrowUp)) {
-						cursorI = clamp(cursorI - 1, 0, SIZE_MASK);
+						cursorI = clamp(cursorI - 1, 0, SIZE - 1);
 						clearSelection(f);
 						f.cellAt(cursorI, cursorJ).selected = true;
 						break;
 					}
 					if (key("s") || key("j") || key(ArrowDown)) {
-						cursorI = clamp(cursorI + 1, 0, SIZE_MASK);
+						cursorI = clamp(cursorI + 1, 0, SIZE - 1);
 						clearSelection(f);
 						f.cellAt(cursorI, cursorJ).selected = true;
 						break;
 					}
 					if (key("a") || key("h") || key(ArrowLeft)) {
-						cursorJ = clamp(cursorJ - 1, 0, SIZE_MASK);
+						cursorJ = clamp(cursorJ - 1, 0, SIZE - 1);
 						clearSelection(f);
 						f.cellAt(cursorI, cursorJ).selected = true;
 						break;
 					}
 					if (key("d") || key("l") || key(ArrowRight)) {
-						cursorJ = clamp(cursorJ + 1, 0, SIZE_MASK);
+						cursorJ = clamp(cursorJ + 1, 0, SIZE - 1);
 						clearSelection(f);
 						f.cellAt(cursorI, cursorJ).selected = true;
 						break;
@@ -755,6 +799,81 @@ class Main extends App {
 						textInput = "0";
 						mode = Input(1);
 						break;
+					}
+					if (key("+")) {
+						maxSteps = clamp(maxSteps * 10, 1000, 1000000);
+					}
+					if (key("-")) {
+						maxSteps = clamp(Math.round(maxSteps / 10), 1000, 1000000);
+					}
+					if (key("p")) {
+						if (f.cellAt(cursorI, cursorJ).data.match(Op(Warp))) {
+							final wpos = toWorld(input.mouse.pos);
+							final ci = Math.floor(wpos.y);
+							final cj = Math.floor(wpos.x);
+							f.cellAt(cursorI, cursorJ - 1).data = Int(cursorJ - cj);
+							f.cellAt(cursorI, cursorJ + 1).data = Int(cursorI - ci);
+						}
+					}
+					if (key("r")) {
+						clearSelection(f);
+						mode = Select;
+						break;
+					}
+					if (key("t")) {
+						do {
+							var hasA = false;
+							var hasB = false;
+							for (c in f.cells) {
+								if (c.data.match(Op(A))) {
+									hasA = true;
+								}
+								if (c.data.match(Op(B))) {
+									hasB = true;
+								}
+							}
+							if (!hasA) {
+								Browser.window.alert("there's no `A`!");
+								break;
+							}
+							function normalize(text:String):String {
+								return ~/[\s]+/g.replace(text, " ").trim();
+							}
+							final msg = hasB ? "input numbers like `A_1 B_1 A_2 B_2 ... A_n B_n`" : "input numbers like `A_1 A_2 ... A_n`";
+							final text = Browser.window.prompt(msg);
+							if (text == null || normalize(text) == "")
+								break;
+							final input = normalize(text).split(" ").map(a -> {
+								final bi:BigInt = a;
+								bi;
+							});
+							if (hasB && input.length % 2 != 0) {
+								Browser.alert("invalid input length");
+								break;
+							}
+							var i = 0;
+							final output = [];
+							while (i < input.length) {
+								final a = input[i++];
+								final b:BigInt = hasB ? input[i++] : 1;
+								w.run(a, b, 1000000, true);
+								if (w.failReason != "") {
+									Browser.alert("failed for A=" + a + (hasB ? " B=" + b.toString() : "") + "\nreason: " +
+										w.failReason);
+									break;
+								}
+								if (!w.result.match(Int(_))) {
+									Browser.alert("got non-number result for A=" + a + (hasB ? " B=" + b.toString() : ""));
+									break;
+								}
+								switch w.result {
+									case Int(a):
+										output.push(a.toString());
+									case _:
+								}
+							}
+							Browser.window.prompt("outputs are:", output.join(" "));
+						} while (false);
 					}
 					if (key(Escape)) {
 						clearSelection(f);
@@ -770,10 +889,84 @@ class Main extends App {
 					}
 					if (key(Enter)) {
 						runSimulation();
-						mode = View;
-						tick = 0;
-						playing = true;
-						frameCount = 10; // hack
+						mode = Simulating;
+						break;
+					}
+				} while (false);
+			case Select:
+				do {
+					final cell = cellAt(f, mouse.pos);
+					if (cell != null) {
+						if (mouse.dleft == 1) {
+							cursorI = cell.i;
+							cursorJ = cell.j;
+							dragging = true;
+							selecting = !cell.selected;
+						}
+						if (!mouse.left)
+							dragging = false;
+						if (mouse.left && dragging) {
+							cursorI = cell.i;
+							cursorJ = cell.j;
+							cell.selected = selecting;
+						}
+
+						final cut = key("x");
+						if (key("c") || cut) {
+							final sel = selectedCells(f);
+							if (!sel.empty()) {
+								copiedCells.clear();
+								for (c in sel) {
+									final data = c.data;
+									copiedCells.push(new Cell(c.i, c.j, data));
+									if (cut) {
+										c.selected = false;
+										c.data = None;
+									}
+								}
+								normalizeCopiedCells();
+								if (cut) {
+									mode = Paste;
+								}
+								break;
+							}
+						}
+					}
+					if (key("w") || key("k") || key(ArrowUp)) {
+						moveSelection(f, -1, 0);
+						break;
+					}
+					if (key("s") || key("j") || key(ArrowDown)) {
+						moveSelection(f, 1, 0);
+						break;
+					}
+					if (key("a") || key("h") || key(ArrowLeft)) {
+						moveSelection(f, 0, -1);
+						break;
+					}
+					if (key("d") || key("l") || key(ArrowRight)) {
+						moveSelection(f, 0, 1);
+						break;
+					}
+					if (key(Escape)) {
+						final sels = selectedCells(f);
+						if (sels.empty()) {
+							gotoEdit();
+						} else {
+							clearSelection(f);
+						}
+						break;
+					}
+					if (key("r") || key(Enter)) {
+						gotoEdit();
+						break;
+					}
+					if (key(Delete)) {
+						deleteSelection(f);
+						break;
+					}
+					if (key("v") && !copiedCells.empty()) {
+						mode = Paste;
 						break;
 					}
 				} while (false);
@@ -789,14 +982,16 @@ class Main extends App {
 					mode = Edit;
 				}
 			case Paste:
-				if (mouse.dright == 1 || key(Escape))
-					mode = Edit;
-				final cell = cellAt(f, mouse.pos);
-				if (cell != null && mouse.dleft == 1) {
-					cursorI = cell.i;
-					cursorJ = cell.j;
-					pasteAt(f, cell.i, cell.j);
-					mode = Edit;
+				if (mouse.dright == 1 || key(Escape)) {
+					gotoEdit();
+				} else {
+					final cell = cellAt(f, mouse.pos);
+					if (cell != null && mouse.dleft == 1) {
+						cursorI = cell.i;
+						cursorJ = cell.j;
+						pasteAt(f, cell.i, cell.j);
+						gotoEdit();
+					}
 				}
 			case View:
 				if (key(Space))
@@ -825,6 +1020,15 @@ class Main extends App {
 				}
 				if (key(Escape))
 					mode = Edit;
+			case Simulating:
+				if (w.finished) {
+					tick = 0;
+					playing = true;
+					frameCount = 10; // hack
+					mode = View;
+				} else if (key(Escape)) {
+					w.stop = true;
+				}
 		}
 	}
 
@@ -834,7 +1038,9 @@ class Main extends App {
 	}
 
 	function drawWorld():Void {
-		if (mode == View)
+		if (mode == Simulating)
+			drawField(w.ticks[w.ticks.length - 1]);
+		else if (mode == View)
 			drawField(w.ticks[tick]);
 		else
 			drawField(w.input);
@@ -843,7 +1049,7 @@ class Main extends App {
 
 	function drawInfo():Void {
 		g.fillColor(1, 0.9);
-		g.fillRect(0, 0, 256, 400);
+		g.fillRect(0, 0, 256, 450);
 		g.font("Arial", 16, Bold, SansSerif);
 		g.fillColor(0);
 		g.textBaseline(Top);
@@ -857,6 +1063,8 @@ class Main extends App {
 		msg("Mode: " + switch mode {
 			case Edit:
 				"Edit";
+			case Select:
+				"Select";
 			case Write(cell):
 				'Editing (${cell.i}, ${cell.j})';
 			case Paste:
@@ -865,6 +1073,8 @@ class Main extends App {
 				'Viewing Result';
 			case Input(index):
 				'Editing Input ${"AB".charAt(index)}';
+			case Simulating:
+				'Running Simulation...';
 		});
 		y += lh * 0.5;
 		switch mode {
@@ -872,29 +1082,46 @@ class Main extends App {
 				msg("RMB & Drag: Pan");
 				msg("Wheel: Zoom");
 				y += lh * 0.5;
-				msg("LMB & Drag: (De)Select");
-				msg("- Hold Shift: Keep Selection");
-				msg("ESC: Deselect All");
+				msg("LMB, E: Edit Cell");
 				y += lh * 0.5;
 				msg("WASD, HJKL, Arrows: Move");
 				y += lh * 0.5;
-				msg("E, LMB(x2): Edit Cell");
-				y += lh * 0.5;
 				msg("DEL: Erase Cells");
-				msg("X: Cut Cells");
-				msg("C: Copy Cells");
-				msg("V: Paste Cells");
+				msg("X: Cut Cell");
+				msg("C: Copy Cell");
+				msg("V: Paste Cell");
+				if (w.input.cellAt(cursorI, cursorJ).data.match(Op(Warp))) {
+					y += lh * 0.5;
+					msg("P: Set Warp Destination");
+				}
+				y += lh * 0.5;
+				msg("R: Select Mode");
 				y += lh * 0.5;
 				msg("1: Edit Input A (= " + inputs[0].toString() + ")");
 				msg("2: Edit Input B (= " + inputs[1].toString() + ")");
 				y += lh * 0.5;
 				msg("Enter: Run Simulation");
 				y += lh * 0.5;
-				g.fillColor(1, 0, 0);
-				final wpos = toWorld(input.mouse.pos);
-				final ci = Math.floor(wpos.y);
-				final cj = Math.floor(wpos.x);
-				msg('(dx, dy) = (${cursorJ - cj}, ${cursorI - ci})');
+				msg("T: Run Tests");
+				y += lh * 0.5;
+				msg("Current Tick Limit = " + maxSteps);
+				msg("+: Increase Limit");
+				msg("-: Decrease Limit");
+			case Select:
+				msg("RMB & Drag: Pan");
+				msg("Wheel: Zoom");
+				y += lh * 0.5;
+				msg("LMB & Drag: (De)Select");
+				msg("ESC: Deselect All");
+				y += lh * 0.5;
+				msg("WASD, HJKL, Arrows: Move");
+				y += lh * 0.5;
+				msg("DEL: Erase Cells");
+				msg("X: Cut Cells");
+				msg("C: Copy Cells");
+				msg("V: Paste Cells");
+				y += lh * 0.5;
+				msg("R, ESC, Enter: Edit Mode");
 			case Write(_):
 				msg("A, B, S: I/O");
 				y += lh * 0.5;
@@ -947,6 +1174,11 @@ class Main extends App {
 				y += lh * 0.5;
 				msg("E, LMB, Enter: Confirm");
 				msg("ESC: Cancel");
+			case Simulating:
+				msg("Simulating... tick=" + w.ticks.length);
+				y += lh * 0.5;
+				g.fillColor(1, 0, 0);
+				msg("ESC: Abort");
 		}
 	}
 
@@ -987,28 +1219,45 @@ class Main extends App {
 			g.strokeRect(cursorJ, cursorI, 1, 1);
 		}
 		if (mode == Edit) {
-			final wpos = toWorld(input.mouse.pos);
-			final ci = Math.floor(wpos.y);
-			final cj = Math.floor(wpos.x);
-			if (ci != cursorI || cj != cursorJ) {
-				g.strokeWidth(0.1);
-				g.strokeColor(0, 0.5);
-				g.strokeRect(cj, ci, 1, 1);
-				g.strokeColor(1, 0, 0, 0.5);
-				final st = Vec2.of(cj + 0.5, ci + 0.5);
-				final en = Vec2.of(cursorJ + 0.5, cursorI + 0.5);
-				final len = (en - st).length;
-				final ang = Math.atan2(en.y - st.y, en.x - st.x);
-				g.save();
-				g.translate(st.x, st.y);
-				g.rotate(ang);
-				g.drawLine(0, 0, len, 0);
-				g.beginPath();
-				g.moveTo(len - 0.3, -0.3);
-				g.lineTo(len, 0);
-				g.lineTo(len - 0.3, 0.3);
-				g.stroke();
-				g.restore();
+			final c = f.cellAt(cursorI, cursorJ);
+			if (c.data.match(Op(Warp))) {
+				final l = f.cellAt(c.i, c.j - 1).data;
+				final r = f.cellAt(c.i, c.j + 1).data;
+				switch [l, r] {
+					case [Int(a), Int(b)] if (a > -100 && a < 100 && b > -100 && b < 100):
+						final dx = a.toInt();
+						final dy = b.toInt();
+						final dstI = c.i - dy;
+						final dstJ = c.j - dx;
+						g.strokeWidth(0.1);
+						g.strokeColor(0, 0.5);
+						g.strokeRect(dstJ, dstI, 1, 1);
+						g.strokeColor(1, 0, 0, 0.5);
+						final en = Vec2.of(dstJ + 0.5, dstI + 0.5);
+						final st = Vec2.of(c.j + 0.5, c.i + 0.5);
+						final len = (en - st).length;
+						final ang = Math.atan2(en.y - st.y, en.x - st.x);
+						g.save();
+						g.translate(st.x, st.y);
+						g.rotate(ang);
+						g.drawLine(0, 0, len, 0);
+						g.beginPath();
+						g.moveTo(len - 0.3, -0.3);
+						g.lineTo(len, 0);
+						g.lineTo(len - 0.3, 0.3);
+						g.stroke();
+						g.restore();
+					case _:
+				}
+				final wpos = toWorld(input.mouse.pos);
+				final ci = Math.floor(wpos.y);
+				final cj = Math.floor(wpos.x);
+				if (ci != cursorI || cj != cursorJ) {
+					g.strokeWidth(0.1);
+					g.strokeColor(0, 0.5);
+					g.strokeRect(cj, ci, 1, 1);
+					g.strokeColor(1, 0, 0, 0.5);
+				}
 			}
 		}
 
@@ -1032,10 +1281,18 @@ class Main extends App {
 		}
 		g.strokeColor(0, alpha);
 		g.strokeRect(0, 0, 1, 1);
-		final text = cell.text != "" ? cell.text : cell.data.toString(true);
+		var text = cell.text != "" ? cell.text : cell.data.toString();
 		if (text != "" && text != " ") {
 			g.fillColor(0, alpha);
-			g.fillText(text, 0.5, 0.5, 1);
+			if (text.length > 9) {
+				g.save();
+				g.font("Courier New", 0.4, Bold, Monospace);
+				g.fillText(text.substr(0, 4) + "…" + text.substr(-4), 0.5, 0.25, 1);
+				g.fillText("len=" + text.length, 0.5, 0.75, 1);
+				g.restore();
+			} else {
+				g.fillText(text, 0.5, 0.5, 1);
+			}
 		}
 	}
 
