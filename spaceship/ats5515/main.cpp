@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <vector>
 
 #define dump(x) cerr << #x << " = " << (x) << endl;
@@ -169,18 +171,70 @@ struct FastSet2 {
 		sz = 0;
 	}
 };
-
+vector<int> index_map;
 vector<int> destX;
 vector<int> destY;
 int testcase_index = -1;
+int N;
 struct Solver {
 	Timer timer;
+	vector<int> load_tsp_solver_order() {
+		vector<int> order;
+		string testcase_index_str = to_string(testcase_index);
+		while (testcase_index_str.size() < 2) {
+			testcase_index_str = "0" + testcase_index_str;
+		}
+		string path = "spaceship/ats5515/tsp_solver_order/" + testcase_index_str + ".txt";
+		ifstream ifs(path);
+
+		int _N, _;
+		ifs >> _N >> _;
+
+		for (int i = 0; i < _N; i++) {
+			int pos;
+			ifs >> pos >> _ >> _;
+			pos--;
+			if (pos == -1) continue;
+			pos = index_map[pos];
+			if (pos == -1) continue;
+			order.push_back(pos);
+		}
+		assert(destX.size() == order.size());
+		return order;
+	}
+	vector<int> load_order() {
+		vector<int> order(N);
+		string testcase_index_str = to_string(testcase_index);
+		while (testcase_index_str.size() < 2) {
+			testcase_index_str = "0" + testcase_index_str;
+		}
+		string path = "spaceship/ats5515/order/" + testcase_index_str + ".txt";
+		ifstream ifs(path);
+
+		for (int i = 0; i < N; i++) {
+			ifs >> order[i];
+		}
+		return order;
+	}
+
+	void save_order(const vector<int> &order) {
+		string testcase_index_str = to_string(testcase_index);
+		while (testcase_index_str.size() < 2) {
+			testcase_index_str = "0" + testcase_index_str;
+		}
+		string path = "spaceship/ats5515/order/" + testcase_index_str + ".txt";
+		ofstream ofs(path);
+		for (int i = 0; i < order.size(); i++) {
+			ofs << order[i] << endl;
+		}
+	}
 
 	static bool can_be_at_1d(int dx, int vx, int turn) {
 		int tri_number = (turn * (turn + 1) / 2);
 		int base = vx * turn;
 		return (base - tri_number <= dx) && (base + tri_number >= dx);
 	}
+
 	static int min_turns(int dx, int dy, int vx, int vy) {
 		if (false) {
 			int turn = 0;
@@ -363,20 +417,222 @@ struct Solver {
 		}
 	}
 
-	double distance(int x1, int y1, int x2, int y2) {
+	inline double distance(int x1, int y1, int x2, int y2) {
 		long long dx = x1 - x2;
 		long long dy = y1 - y2;
 		// return abs(dx) + abs(dy);
 		// return pow(dx * dx + dy * dy, 0.68);
-		// return sqrt(dx * dx + dy * dy);
-		return dx * dx + dy * dy;
+		return sqrt(dx * dx + dy * dy);
+		// return dx * dx + dy * dy;
 	}
-	void TSP(vector<int> &order) {
-		int N = destX.size();
+
+	inline double inertia_distance(int x1, int y1, int x2, int y2) {
+		long long dx = x1 - x2;
+		long long dy = y1 - y2;
+		// return abs(dx) + abs(dy);
+		// return pow(dx * dx + dy * dy, 0.68);
+		return sqrt(dx * dx + dy * dy);
+		// return dx * dx + dy * dy;
+	}
+
+	inline double inertia_score(int a1, int a2, int a3, const vector<int> &order) {
+		if (a2 >= N || a3 >= N) return 0;
+		int px1, px2, px3;
+		int py1, py2, py3;
+		if (a1 < 0) {
+			px1 = 0;
+			py1 = 0;
+		} else {
+			px1 = destX[order[a1]];
+			py1 = destY[order[a1]];
+		}
+
+		if (a2 < 0) {
+			px2 = 0;
+			py2 = 0;
+		} else {
+			px2 = destX[order[a2]];
+			py2 = destY[order[a2]];
+		}
+
+		px3 = destX[order[a3]];
+		py3 = destY[order[a3]];
+
+		return inertia_distance(px2 - px1, py2 - py1, px3 - px2, py3 - py2);
+	}
+	void inertiaTSP(vector<int> &order) {
 		double score = 0;
+
+		// for (int i = 0; i < order.size(); i++) {
+		// 	if(i == 0){
+		// 		score += distance(0, 0, destX[order[0]], destY[order[0]]);
+		// 	}else{
+		// 		score += distance(destX[order[i - 1]], destY[order[i - 1]], destX[order[i]], destY[order[i]]);
+		// 	}
+		// }
+
 		double bestscore = 0;
 		double st = timer.get();
-		double timelimit = st + 240;
+		double timelimit = st + 10;
+		double tcoef = 1.0 / (timelimit - st);
+		int cnt = 0;
+		double log_interval_time = (timelimit - st) / 10;
+		double next_log_timing = st;
+		bool updated = false;
+		double score_coef = 0;
+		double max_score_coef = 0.5;
+		double r;
+		double T;
+		double T0 = 100;
+		if (testcase_index == 25) {
+			T0 = 10;
+		} else if (testcase_index == 24) {
+			T0 = 450000000;
+			T0 = 200000;
+			T0 = 1000;
+		} else if (testcase_index == 23) {
+			T0 = 50000000 / 10000000;
+		} else if (testcase_index == 22) {
+			T0 = 300 / 100;
+		} else if (testcase_index == 21) {
+			T0 = 300 / 60;	// / 300;
+		} else if (testcase_index == 20) {
+			T0 = 300 / 60;
+			// T0 = 500 / 20;
+		} else if (testcase_index == 19) {
+			T0 = 0.5;
+		} else if (testcase_index == 18) {
+			T0 = 300000 / 2000 * 3;
+		} else if (testcase_index == 17) {
+			T0 = 500 / 30;
+		} else if (testcase_index == 16) {
+			T0 = 60 / 20;
+		} else if (testcase_index == 15) {
+			T0 = 1;
+		}
+		while (true) {
+			double ti = timer.get();
+			if (ti > timelimit) break;
+			// cnt++;
+			// if (cnt >= 1000) break;
+			T = (timelimit - ti) * tcoef;
+			T = T0 * T;
+			if (ti > next_log_timing) {
+				next_log_timing += log_interval_time;
+				cerr << fixed << setprecision(5) << T << " " << score << " " << bestscore << endl;
+			}
+			double r = rnd.nextDouble();
+			if (r < 1.1) {
+				int a = rnd.nextInt(N);
+				int b = rnd.nextInt(N - 1);
+				if (a <= b) b++;
+				if (a > b) {
+					swap(a, b);
+				}
+				// reverse a ~ b
+
+				double scorediffA = 0;
+				if (a == 0) {
+					scorediffA -= distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediffA += distance(destX[order[b]], destY[order[b]], 0, 0);
+				} else {
+					scorediffA -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+					scorediffA += distance(destX[order[b]], destY[order[b]], destX[order[a - 1]], destY[order[a - 1]]);
+				}
+
+				if (b < N - 1) {
+					scorediffA -= distance(destX[order[b]], destY[order[b]], destX[order[b + 1]], destY[order[b + 1]]);
+					scorediffA += distance(destX[order[a]], destY[order[a]], destX[order[b + 1]], destY[order[b + 1]]);
+				}
+				// else{ // 原点に戻る場合
+				// 	scorediff -= distance(destX[order[b]], destY[order[b]], 0, 0);
+				// 	scorediff += distance(destX[order[a]], destY[order[a]], 0, 0);
+				// }
+
+				double scorediffB = 0;
+
+				scorediffB -= inertia_score(a - 1, a, a + 1, order);
+				scorediffB -= inertia_score(a - 2, a - 1, a, order);
+				scorediffB += inertia_score(a - 1, b, b - 1, order);
+				scorediffB += inertia_score(a - 2, a - 1, b, order);
+
+				scorediffB -= inertia_score(b - 1, b, b + 1, order);
+				scorediffB -= inertia_score(b, b + 1, b + 2, order);
+				scorediffB += inertia_score(a + 1, a, b + 1, order);
+				scorediffB += inertia_score(a, b + 1, b + 2, order);
+
+				double scorediff = scorediffA * 0.3 + scorediffB;
+				if (scorediff <= -T * rnd.nextLog()) {
+					score += scorediff;
+					if (bestscore > score) {
+						bestscore = score;
+					}
+					reverse(order.begin() + a, order.begin() + (b + 1));
+				}
+			} else {
+				int a = rnd.nextInt(N);
+				int b = rnd.nextInt(N - 1);
+				if (a <= b) b += 2;
+
+				// insert element a to positin b
+
+				double scorediff = 0;
+				if (a == 0) {
+					scorediff -= distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a + 1]], destY[order[a + 1]]);
+					scorediff += distance(destX[order[a + 1]], destY[order[a + 1]], 0, 0);
+				} else if (a == N - 1) {
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+				} else {
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a - 1]], destY[order[a - 1]]);
+					scorediff -= distance(destX[order[a]], destY[order[a]], destX[order[a + 1]], destY[order[a + 1]]);
+					scorediff += distance(destX[order[a - 1]], destY[order[a - 1]], destX[order[a + 1]], destY[order[a + 1]]);
+				}
+
+				if (b == 0) {
+					scorediff += distance(destX[order[a]], destY[order[a]], 0, 0);
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b]], destY[order[b]]);
+					scorediff -= distance(destX[order[b]], destY[order[b]], 0, 0);
+				} else if (b == N) {
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b - 1]], destY[order[b - 1]]);
+				} else {
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b - 1]], destY[order[b - 1]]);
+					scorediff += distance(destX[order[a]], destY[order[a]], destX[order[b]], destY[order[b]]);
+					scorediff -= distance(destX[order[b - 1]], destY[order[b - 1]], destX[order[b]], destY[order[b]]);
+				}
+
+				if (scorediff <= -T * rnd.nextLog()) {
+					score += scorediff;
+					if (bestscore > score) {
+						bestscore = score;
+					}
+					if (a < b) {
+						for (int i = a; i < b - 1; i++) {
+							swap(order[i], order[i + 1]);
+						}
+					} else {
+						for (int i = a; i > b; i--) {
+							swap(order[i], order[i - 1]);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	void TSP(vector<int> &order) {
+		double score = 0;
+
+		// for (int i = 0; i < order.size(); i++) {
+		// 	if(i == 0){
+		// 		score += distance(0, 0, destX[order[0]], destY[order[0]]);
+		// 	}else{
+		// 		score += distance(destX[order[i - 1]], destY[order[i - 1]], destX[order[i]], destY[order[i]]);
+		// 	}
+		// }
+		double bestscore = 0;
+		double st = timer.get();
+		double timelimit = st + 10;
 		double tcoef = 1.0 / (timelimit - st);
 		int cnt = 0;
 		double log_interval_time = (timelimit - st) / 10;
@@ -393,20 +649,20 @@ struct Solver {
 			T0 = 450000000;
 			T0 = 200000;
 		} else if (testcase_index == 23) {
-			T0 = 50000000;
+			T0 = 50000000 / 10000000;
 		} else if (testcase_index == 22) {
-			T0 = 300 / 60;
+			T0 = 300;  // / 60;
 		} else if (testcase_index == 21) {
-			T0 = 2000 / 300;
+			T0 = 1000;	// / 300;
 		} else if (testcase_index == 20) {
-			T0 = 500 / 80;
-			// T0 = 500 / 20;
+			T0 = 300;  // / 80;
+					   // T0 = 500 / 20;
 		} else if (testcase_index == 19) {
 			T0 = 10;
 		} else if (testcase_index == 18) {
 			T0 = 300000 / 2000;
 		} else if (testcase_index == 17) {
-			T0 = 500 / 10;
+			T0 = 500;  // / 10;
 		} else if (testcase_index == 16) {
 			T0 = 60;
 		} else if (testcase_index == 15) {
@@ -524,11 +780,11 @@ struct Solver {
 
 		void do_eval(int i) {
 			eval = turns + rnd.nextDouble() * 1;
-			if (i + 1 < destX.size()) {
+			if (i + 1 < N) {
 				// 	int dx = destX[i + 1] - destX[i];
 				// 	int dy = destY[i + 1] - destY[i];
 				// 	eval += min_turns(dx, dy, vx, vy);
-				eval += 0.1 * (abs(vx) + abs(vy));
+				 eval += 1.0 * (abs(vx) + abs(vy));
 			}
 			// eval += vx * vx + vy * vy;
 		}
@@ -538,7 +794,7 @@ struct Solver {
 		}
 	};
 
-	vector<map<long long, int> > dp;
+	vector<unordered_map<long long, int> > dp;
 	void add_beam(vector<BeamState> &beam, int i, int vx, int vy, int turn, int from) {
 		long long hash = vx * (long long)1e9 + vy;
 		auto a = dp[i].find(hash);
@@ -555,56 +811,139 @@ struct Solver {
 		// for (int i = 0; i < seed; i++) {
 		// 	rnd.next();
 		// }
-		dp.resize(destX.size() + 1);
+		dp.resize(N + 1);
 		// 答えを格納する変数
 		// それぞれx軸、y軸の加速度(-1, 0, 1のいずれか)の列が入る
 		vector<int> resX;
 		vector<int> resY;
 
 		// 訪問する点の順番を決める
-		vector<int> visited(destX.size(), 0);
-		vector<int> order(destX.size());
+		vector<int> visited(N, 0);
+		vector<int> order(N);
 		int x = 0;
 		int y = 0;
 		int vx = 0;
 		int vy = 0;
-		for (int i = 0; i < destX.size(); i++) {
-			if (testcase_index == 5) {
-				order[i] = i;
-				continue;
-			}
-			long long mnscore = 1e18;
-			int mnj = -1;
-			for (int j = 0; j < destX.size(); j++) {
-				if (!visited[j]) {
-					double dx = destX[j] - x;
-					double dy = destY[j] - y;
-					long long score = 0;
+		bool greedy = false;
+		// greedy = true;
+		if (greedy) {
+			bool f = false;
+			// vector<int> path = {20, 29, 22, 98, 93, 81, 78, 48, 52, 87, 3, 82, 10, 76};
+			// vector<int> path = {20, 29, 93, 82, 10, 3, 87, 52, 48, 78, 81, 22, 98, 76};
+			// vector<int> path = {20, 29, 22, 98, 82, 10, 3, 87, 52, 48, 78, 81, 93, 76};
+			// vector<int> path = {20, 29, 22, 98, 76, 93, 81, 78, 48, 52, 87, 3, 82, 10};
+			vector<int> path = {20, 29, 22, 98, 76, 82, 10, 3, 87, 52, 48, 78, 81, 93};
+			for (int i = 0; i < N; i++) {
+				if (testcase_index == 5) {
+					order[i] = i;
+					continue;
+				}
+				double mnscore = 1e18;
+				int mnj = -1;
+				for (int j = 0; j < N; j++) {
+					if (testcase_index == 9) {
+						if (i <= 50) {
+							if (j == 53 || j == 62) continue;
+						}
 
-					// score = abs(dx) + abs(dy) - 2 * dy;
-					score = abs(dx) + abs(dy);
-					// score -= 2.1 * max(abs(destX[j]), abs(destY[j]));
-					// score += 0.01 * ((long long)dx * dx + (long long)dy * dy);
-					//  score = sqrt((long long)dx * dx + (long long)dy * dy) + rnd.nextDouble() * 3.0;
-					//  score = abs(dx) + abs(dy) + rnd.nextDouble() * 3.0; // ガチャ
-					//  score += rnd.nextDouble() * 8.0;
-					if (mnscore > score) {
-						mnscore = score;
-						mnj = j;
+						if (f && path.size() > 0) {
+							if (j != path[0]) continue;
+						} else if (!f) {
+							bool a = true;
+							for (int k = 0; k < path.size(); k++) {
+								if (path[k] == j) {
+									a = false;
+								}
+							}
+							if (!a) continue;
+						}
+						if (i > 0 && order[i - 1] != 73) {
+							if (j == 28) continue;
+						}
+					}
+					if (!visited[j]) {
+						double dx = destX[j] - x;
+						double dy = destY[j] - y;
+						double score = 0;
+
+						// score = abs(dx) + abs(dy) - 28 * dy;
+
+						score = abs(dx) + abs(dy);
+						// score -= 2.1 * max(abs(destX[j]), abs(destY[j]));
+						// score += 0.01 * ((long long)dx * dx + (long long)dy * dy);
+						// score += ((long long)dx * dx + (long long)dy * dy);
+						// score += sqrt(((long long)dx * dx + (long long)dy * dy));
+						//  score = sqrt((long long)dx * dx + (long long)dy * dy) + rnd.nextDouble() * 3.0;
+						//  score = abs(dx) + abs(dy) + rnd.nextDouble() * 3.0; // ガチャ
+						//  score += rnd.nextDouble() * 8.0;
+						if (mnscore > score) {
+							mnscore = score;
+							mnj = j;
+						}
 					}
 				}
+				if (testcase_index == 9) {
+					if (f && path.size() > 0) {
+						cerr << destX[mnj] << " " << destY[mnj] << endl;
+					}
+					if (f && path.size() > 0) {
+						path.erase(path.begin());
+					}
+					if (mnj == 72) f = true;
+				}
+				if (testcase_index == 23) {
+					if (mnscore > 1000) {
+						cerr << i << endl;
+						break;
+					}
+				}
+				// if (i % 1000 == 0) {
+				// 	cerr << mnscore << endl;
+				// }
+				order[i] = mnj;
+				visited[mnj] = 1;
+				x = destX[mnj];
+				y = destY[mnj];
+				// cerr << x << " " << y << endl;
 			}
-			order[i] = mnj;
-			visited[mnj] = 1;
-			x = destX[mnj];
-			y = destY[mnj];
-			// cerr << x << " " << y << endl;
+			if (testcase_index == 23) {
+				vector<int> remains;
+				for (int i = 0; i < N; i++) {
+					if (!visited[i]) {
+						remains.push_back(i);
+					}
+				}
+				for (int i = 0; i < remains.size(); i++) {
+					double mnscore = 1e18;
+					int mnj = -1;
+					for (int j = 0; j < N - remains.size() + i - 1; j++) {
+						double dx1 = destX[order[j]] - destX[remains[i]];
+						double dy1 = destY[order[j]] - destY[remains[i]];
+						double dx2 = destX[order[j + 1]] - destX[remains[i]];
+						double dy2 = destY[order[j + 1]] - destY[remains[i]];
+						double score = abs(dx1) + abs(dx2) + abs(dy1) + abs(dy2);
+
+						if (mnscore > score) {
+							mnscore = score;
+							mnj = j;
+						}
+					}
+					order.insert((order.begin() + mnj + 1), remains[i]);
+					order.pop_back();
+					cerr << remains[i] << " " << mnscore << endl;
+				}
+			}
+		} else {
+			// order = load_tsp_solver_order();
+			order = load_order();
 		}
 
-		// swap(order[0], order[1]);
 
-		TSP(order);
-
+		// TSP(order);
+		if (true) {
+			inertiaTSP(order);
+			save_order(order);
+		}
 		x = 0;
 		y = 0;
 		vx = 0;
@@ -613,16 +952,16 @@ struct Solver {
 		int mnx, mxx;
 		int mny, mxy;
 
-		int width = 1000;
-		int max_transition = 40;
-		int extra_turns = 15;
+		int width = 1 << 12;
+		int max_transition = 20;
+		int extra_turns = 10;
 
-		vector<vector<BeamState> > beams(destX.size() + 1);
+		vector<vector<BeamState> > beams(N + 1);
 		beams[0].emplace_back(0, 0, 0, -1);
-
-		for (int i = 0; i < destX.size(); i++) {
+		cerr << "beamsearch start" << endl;
+		for (int i = 0; i < N; i++) {
 			// cerr << i << " " << beams[i].size() << endl;
-			if (i % 100 == 0) {
+			if (i % 1000 == 0 && i != 0) {
 				cerr << i << " " << beams[i][0].turns << " " << beams[i][0].vx << " " << beams[i][0].vy << endl;
 			}
 			int pos_index = order[i];
@@ -673,6 +1012,7 @@ struct Solver {
 				beams[i + 1].resize(width);
 			}
 			beams[i + 1].shrink_to_fit();
+			dp[i].clear();
 
 			x = destX[pos_index];
 			y = destY[pos_index];
@@ -680,7 +1020,7 @@ struct Solver {
 		auto best = *min_element(beams.back().begin(), beams.back().end());
 		vector<BeamState> bests;
 		bests.push_back(best);
-		for (int i = destX.size() - 1; i >= 0; i--) {
+		for (int i = N - 1; i >= 0; i--) {
 			best = beams[i][best.from];
 			bests.push_back(best);
 		}
@@ -689,7 +1029,7 @@ struct Solver {
 
 		x = 0;
 		y = 0;
-		for (int i = 0; i < destX.size(); i++) {
+		for (int i = 0; i < N; i++) {
 			int pos_index = order[i];
 			int dx = destX[pos_index] - x;
 			int dy = destY[pos_index] - y;
@@ -702,7 +1042,7 @@ struct Solver {
 			// cerr << dx << " " << vx1 << " " << vx2 << " " << turn << endl;
 			generate_moves_1d_with_final_velocity(dx, vx1, vx2, turn, resX);
 			generate_moves_1d_with_final_velocity(dy, vy1, vy2, turn, resY);
-			// cerr << turn << endl;
+			// cerr << pos_index << " " << turn << endl;
 			x = destX[pos_index];
 			y = destY[pos_index];
 		}
@@ -744,9 +1084,13 @@ struct Solver {
 			int x = stoi(strs[0]);
 			int y = stoi(strs[1]);
 			if (st.find({x, y}) == st.end()) {
+				// {
+				index_map.push_back(destX.size());
 				destX.push_back(x);
 				destY.push_back(y);
 				st.emplace(x, y);
+			} else {
+				index_map.push_back(-1);
 			}
 			if (line == 4) {
 				line4 = {x, y};
@@ -754,6 +1098,7 @@ struct Solver {
 			line++;
 		}
 		dump(destX.size());
+		N = destX.size();
 		map<pair<int, int>, int> destxy4_to_testcase_index;
 		destxy4_to_testcase_index[pair<int, int>(3, -10)] = 1;
 		destxy4_to_testcase_index[pair<int, int>(0, 7)] = 2;
