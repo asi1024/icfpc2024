@@ -261,10 +261,19 @@ std::vector<i64> get_testers(i64 p) {
     return ret;
 }
 
-std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng, int n_roots) {
+std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng, int n_roots, bool eco_mode) {
     i64 p;
+
+    i64 prime_lo, prime_hi;
+    if (eco_mode) {
+        prime_lo = 730583;
+        prime_hi = 830583;
+    } else {
+        prime_lo = 1e9;
+        prime_hi = 1e9 + 1e8;
+    }
     while (true) {
-        p = std::uniform_int_distribution<i64>(1e9, 1e9 + 1e8)(rng);
+        p = std::uniform_int_distribution<i64>(prime_lo, prime_hi)(rng);
         if (is_prime(p)) {
             break;
         }
@@ -273,10 +282,18 @@ std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng
     std::vector<i64> testers = get_testers(p);
     std::set<i64> roots;
 
-    while (roots.size() < n_roots) {
-        i64 k = std::uniform_int_distribution<i64>(2, p - 1)(rng);
-        if (is_primitive_root(k, p, testers)) {
-            roots.insert(k);
+    if (eco_mode) {
+        for (i64 k = 2; k < 94; ++k) {
+            if (is_primitive_root(k, p, testers)) {
+                roots.insert(k);
+            }
+        }
+    } else {
+        while (roots.size() < n_roots) {
+            i64 k = std::uniform_int_distribution<i64>(2, p - 1)(rng);
+            if (is_primitive_root(k, p, testers)) {
+                roots.insert(k);
+            }
         }
     }
 
@@ -309,7 +326,7 @@ int main(int argc, char** argv) {
 
     int problem_id = atoi(argv[1]);
     int stride;
-    if (argc == 3) {
+    if (argc >= 3) {
         stride = atoi(argv[2]);
     } else {
         stride = 1;
@@ -317,6 +334,10 @@ int main(int argc, char** argv) {
     if (stride != 1 && stride != 2) {
         fprintf(stderr, "stride must be 1 or 2\n");
         return 1;
+    }
+    bool eco_mode = false;
+    if (argc >= 4) {
+        eco_mode = atoi(argv[3]);
     }
 
     int n_sp = 0;
@@ -333,10 +354,10 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "H: %d, W: %d, start: (%d, %d)\n", H, W, sy, sx);
 
-    int steps = 999000 / stride;
+    int steps = (eco_mode ? 500000 : 999000) / stride;
     int sota = 0;
     for (;;) {
-        auto [p, roots] = gen_prime_and_primitive_roots(rng, 100);
+        auto [p, roots] = gen_prime_and_primitive_roots(rng, 100, eco_mode);
         for (i64 k : roots) {
             i64 s = decide_s(p, k, steps);
             auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride);
@@ -366,24 +387,9 @@ int main(int argc, char** argv) {
                 }
             }
 
-            if (isok) {
-                fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
-                fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
-                fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
-
-                if (stride == 1) {
-                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I\" BD B%% vs I%% SL>FO %s\n",
-                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
-                    );
-                } else {
-                    printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s BT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
-                        problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), to_base94(s).c_str()
-                    );
-                }
-                return 0;
-            }
             if (n_visited == n_sp) {
                 fprintf(stderr, "done!\n");
+                return 0;
             }
         }
     }
