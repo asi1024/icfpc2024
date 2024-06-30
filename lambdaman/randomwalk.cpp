@@ -135,6 +135,23 @@ void aux_dfs(int tid, int y, int x, std::string& buf) {
     }
 }
 
+int get_cycle_len(i64 s, i64 k, i64 prime) {
+    Rng rng(s, k, prime);
+
+    int ret = 0;
+    for (;;) {
+        if (rng.exhausted()) {
+            break;
+        }
+        rng.next();
+        ++ret;
+
+        if (ret > 1000000) return -1;
+    }
+
+    return ret;
+}
+
 std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride, int tid) {
     auto [dirs, seeds] = make_random_seq(s, k, prime);
 
@@ -144,7 +161,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
         }
     }
     int y = sy, x = sx;
-    first_visit_time[tid][y][x] = 0;
+    first_visit_time[tid][y][x] = -2;
     for (int i = 0; i < (int)dirs.size(); ++i) {
         int dir = dirs[i];
         int y2 = y + DY[dir];
@@ -291,17 +308,21 @@ std::vector<i64> get_testers(i64 p) {
     return ret;
 }
 
-std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng, int n_roots, bool eco_mode) {
+std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng, int n_roots, int eco_mode) {
     i64 p;
 
     i64 prime_lo, prime_hi;
-    if (eco_mode) {
-        prime_lo = 730583;
-        prime_hi = 830583;
-    } else {
-        prime_lo = 1e9;
-        prime_hi = 1e9 + 1e8;
+    if (eco_mode == 0) {
+        prime_hi = 94 * 94 * 94 * 94 - 1;
+        prime_lo = prime_hi - 10000000;
+    } else if (eco_mode == 1) {
+        prime_hi = 94 * 94 - 1;
+        prime_lo = 5000;
+    } else if (eco_mode == 2) {
+        prime_hi = 94 * 94 * 94 - 1;
+        prime_lo = prime_hi - 200000;
     }
+
     while (true) {
         p = std::uniform_int_distribution<i64>(prime_lo, prime_hi)(rng);
         if (is_prime(p)) {
@@ -320,7 +341,7 @@ std::pair<i64, std::vector<i64>> gen_prime_and_primitive_roots(std::mt19937& rng
         }
     } else {
         while (roots.size() < n_roots) {
-            i64 k = std::uniform_int_distribution<i64>(2, p - 1)(rng);
+            i64 k = std::uniform_int_distribution<i64>(2, std::min(94LL * 94 - 1, p - 1))(rng);
             if (is_primitive_root(k, p, testers)) {
                 roots.insert(k);
             }
@@ -368,10 +389,7 @@ int main(int argc, char** argv) {
         fprintf(stderr, "stride must be 1 or 2\n");
         return 1;
     }
-    bool eco_mode = false;
-    if (argc >= 4) {
-        eco_mode = atoi(argv[3]);
-    }
+    int eco_mode = atoi(argv[3]);
 
     int n_sp = 0;
     for (int y = 0; y < H; ++y) {
@@ -387,7 +405,8 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "H: %d, W: %d, start: (%d, %d)\n", H, W, sy, sx);
 
-    int steps = (eco_mode ? 500000 : 999000) / stride;
+    int steps = 999000 / stride;
+    int steps_max = steps;
     int sota = 0;
     int last_rectify_len = 1000;
     std::mutex mtx;
@@ -409,7 +428,25 @@ int main(int argc, char** argv) {
                     if (sota == n_sp) {
                         return;
                     }
-                    i64 s = decide_s(p, k, steps);
+
+                    i64 s;
+                    if (eco_mode == 0) {
+                        s = decide_s(p, k, steps);
+                    } else {
+                        s = -1;
+                        int best_len = -1;
+                        for (i64 s_cand = 2; s_cand <= 93; ++s_cand) {
+                            int len = get_cycle_len(s_cand, k, p);
+                            if (len > steps_max) continue;
+
+                            if (len > best_len) {
+                                best_len = len;
+                                s = s_cand;
+                            }
+                        }
+                        if (s == -1) continue;
+                        steps = best_len;
+                    }
                     auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride, i);
 
                     mtx.lock();
@@ -424,16 +461,20 @@ int main(int argc, char** argv) {
                         if (rectified && rectified->size() < last_rectify_len) {
                             mtx.lock();
                             last_rectify_len = rectified->size();
-                            fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
-                            fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
-                            fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
+                            std::string p_str = to_base94(p);
+                            std::string k_str = to_base94(k);
+                            std::string s_str = to_base94(s);
+                            std::string pid_str = problem_id_to_string(problem_id);
+                            fprintf(stderr, "p: %s (%lld)\n", p_str.c_str(), p);
+                            fprintf(stderr, "k: %s (%lld)\n", k_str.c_str(), k);
+                            fprintf(stderr, "s: %s (%lld)\n", s_str.c_str(), s);
                             if (stride == 1) {
                                 printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
-                                    problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), s_str.c_str()
                                 );
                             } else {
                                 printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
-                                    problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
+                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), s_str.c_str()
                                 );
                             }
                             fflush(stdout);
