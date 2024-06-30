@@ -13,6 +13,7 @@
 #include <string>
 #include <sstream>
 #include <vector>
+#include <map>
 
 using i64 = long long;
 
@@ -86,14 +87,16 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     }
 
     for (int dir : dirs) {
-        int y2 = y + DY[dir];
-        int x2 = x + DX[dir];
-        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
-            for (int d = 1; d <= stride; ++d) {
-                visited[y + DY[dir] * d][x + DX[dir] * d] = true;
+        for (int d = 1; d <= stride; ++d) {
+            int y2 = y + DY[dir];
+            int x2 = x + DX[dir];
+            if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
+                y = y2;
+                x = x2;
+                visited[y][x] = true;
+            } else {
+                break;
             }
-            y = y + DY[dir] * stride;
-            x = x + DX[dir] * stride;
         }
     }
 
@@ -114,6 +117,7 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
 }
 
 i64 first_visit_time[310][310];
+int first_visit_time_step[310][310];
 
 void aux_dfs(int y, int x, std::string& buf) {
     for (int d = 0; d < 4; ++d) {
@@ -142,22 +146,29 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
         int dir = dirs[i];
         int y2 = y + DY[dir];
         int x2 = x + DX[dir];
-        if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
-            for (int d = 1; d < stride; ++d) {
-                first_visit_time[y + DY[dir] * d][x + DX[dir] * d] = -2;
-            }
-            y = y + DY[dir] * stride;
-            x = x + DX[dir] * stride;
-            if (first_visit_time[y][x] == -1) {
-                first_visit_time[y][x] = i + 1;
+
+        for (int d = 1; d <= stride; ++d) {
+            int y2 = y + DY[dir];
+            int x2 = x + DX[dir];
+            if (0 <= y2 && y2 < H && 0 <= x2 && x2 < W && board[y2][x2] != '#') {
+                y = y2;
+                x = x2;
+                if (first_visit_time[y][x] < 0) {
+                    first_visit_time[y][x] = i;
+                    first_visit_time_step[y][x] = d;
+                }
+            } else {
+                break;
             }
         }
     }
 
+    std::map<i64, std::vector<std::pair<int, std::string>>> insertion_map;
+
     std::ostringstream oss;
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
-            if (board[y][x] == '#' || first_visit_time[y][x] == -1 || first_visit_time[y][x] == dirs.size()) {
+            if (board[y][x] == '#' || first_visit_time[y][x] < 0 || first_visit_time[y][x] == dirs.size() - 1) {
                 continue;
             }
 
@@ -177,10 +188,26 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
 
             std::string buf;
             aux_dfs(y, x, buf);
-            buf.push_back(DIRNAME[dirs[first_visit_time[y][x]]]);
 
-            oss << "? B= vs " << to_base94(seeds[first_visit_time[y][x]]) << " S" << buf << " ";
+            insertion_map[first_visit_time[y][x]].emplace_back(first_visit_time_step[y][x], buf);
+            // oss << "? B= vs " << to_base94(seeds[first_visit_time[y][x]]) << " S" << buf << " ";
         }
+    }
+    //if (insertion_map.size() >= 6) {
+    //    fprintf(stderr, "insertion map too large: %d\n", (int)insertion_map.size());
+    //    return std::nullopt;
+    //}
+    for (auto [t, vec] : insertion_map) {
+        std::sort(vec.begin(), vec.end());
+        oss << "? B= vs " << to_base94(seeds[t]) << " S";
+        std::vector<std::string> timings(stride);
+        for (auto [t, v] : vec) {
+            timings[t - 1] = v;
+        }
+        for (int i = 0; i < stride; ++i) {
+            oss << DIRNAME[dirs[t]] << timings[i];
+        }
+        oss << " ";
     }
 
     for (int y = 0; y < H; ++y) {
@@ -314,7 +341,7 @@ std::string problem_id_to_string(int n) {
 }
 
 int main(int argc, char** argv) {
-    std::mt19937 rng(37);
+    std::mt19937 rng(137);
 
     H = 0;
     for (;;) {
@@ -356,24 +383,29 @@ int main(int argc, char** argv) {
 
     int steps = (eco_mode ? 500000 : 999000) / stride;
     int sota = 0;
+    int last_rectify_len = 1000;
     for (;;) {
         auto [p, roots] = gen_prime_and_primitive_roots(rng, 100, eco_mode);
         for (i64 k : roots) {
             i64 s = decide_s(p, k, steps);
             auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride);
 
-            if (sota >= n_visited) continue;
+            if (sota < n_visited) {
+                sota = n_visited;
+                fprintf(stderr, "current best: %d / %d\n", n_visited, n_sp);
+            }
 
-            sota = n_visited;
-            fprintf(stderr, "current best: %d / %d\n", n_visited, n_sp);
-
-            if (n_sp - n_visited <= 40) {
+            if (n_sp - n_visited <= 100) {
                 std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride);
                 if (rectified) {
+                    if (rectified->size() < last_rectify_len) {
+                        last_rectify_len = rectified->size();
+                    } else {
+                        continue;
+                    }
                     fprintf(stderr, "p: %s (%lld)\n", to_base94(p).c_str(), p);
                     fprintf(stderr, "k: %s (%lld)\n", to_base94(k).c_str(), k);
                     fprintf(stderr, "s: %s (%lld)\n", to_base94(s).c_str(), s);
-
                     if (stride == 1) {
                         printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
                             problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
