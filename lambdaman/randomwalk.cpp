@@ -436,6 +436,8 @@ int main(int argc, char** argv) {
                                     problem_id_to_string(problem_id).c_str(), to_base94(k).c_str(), to_base94(p).c_str(), rectified->c_str(), to_base94(s).c_str()
                                 );
                             }
+                            fflush(stdout);
+                            fprintf(stderr, "current rectify len: %d\n", (int)rectified->size());
                             mtx.unlock();
                         }
                     }
