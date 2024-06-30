@@ -34,7 +34,7 @@ enum CellData {
 }
 
 private class CellDataTools {
-	public static function toString(data:CellData):String {
+	public static function toString(data:CellData, render:Bool = false):String {
 		return switch data {
 			case None:
 				"";
@@ -68,7 +68,7 @@ private class CellDataTools {
 					case Eq:
 						"=";
 					case Neq:
-						"≠";
+						render ? "≠" : "#";
 					case Warp:
 						"@";
 					case A:
@@ -378,7 +378,12 @@ class World {
 						}
 				}
 			}
+			var submitByWarp = false;
 			for (w1 in warpTargets) {
+				if (times[w1.t].cellAt(w1.i, w1.j).data.match(Op(S))) {
+					result = w1.data;
+					submitByWarp = true;
+				}
 				for (w2 in warpTargets) {
 					if (w1 == w2)
 						break;
@@ -398,7 +403,7 @@ class World {
 			if (nothingHappened)
 				if (++nothingHappenedCount >= 10)
 					break;
-			if (warpTargets.length > 0 && result == None) {
+			if (warpTargets.length > 0 && (result == None || submitByWarp)) {
 				final t = warpTargets[0].t;
 				while (times.length > t + 1) {
 					times.pop();
@@ -462,6 +467,30 @@ class Main extends App {
 		}
 		Browser.document.getElementById("export").onclick = () -> {
 			Browser.window.navigator.clipboard.writeText(w.input.toString());
+		}
+		Browser.document.getElementById("import-mod").onclick = () -> {
+			Browser.window.navigator.clipboard.readText().then(text -> {
+				final f = new Field();
+				f.fromString(text);
+				copiedCells.clear();
+				for (c in f.cells) {
+					if (c.data != None) {
+						copiedCells.push(c);
+					}
+				}
+				normalizeCopiedCells();
+				mode = Paste;
+			});
+		}
+		Browser.document.getElementById("export-mod").onclick = () -> {
+			final sel = selectedCells(w.input);
+			if (sel.empty())
+				return;
+			final f = new Field();
+			for (c in sel) {
+				f.cellAt(c.i, c.j).data = c.data;
+			}
+			Browser.window.navigator.clipboard.writeText(f.toString());
 		}
 
 		pot.start();
@@ -611,6 +640,24 @@ class Main extends App {
 		w.run(inputs[0], inputs[1]);
 	}
 
+	function normalizeCopiedCells():Void {
+		var mins = [SIZE, SIZE];
+		var maxs = [0, 0];
+		for (c in copiedCells) {
+			mins[0] = min(mins[0], c.i);
+			mins[1] = min(mins[1], c.j);
+			maxs[0] = max(maxs[0], c.i);
+			maxs[1] = max(maxs[1], c.j);
+		}
+		final mi = mins[0] + maxs[0] >> 1;
+		final mj = mins[1] + maxs[1] >> 1;
+		for (i => c in copiedCells) {
+			final di = c.i - mi;
+			final dj = c.j - mj;
+			copiedCells[i] = new Cell(di, dj, c.data);
+		}
+	}
+
 	function processInput():Void {
 		final mouse = input.mouse;
 		final kb = input.keyboard;
@@ -662,26 +709,15 @@ class Main extends App {
 							final sel = selectedCells(f);
 							if (!sel.empty()) {
 								copiedCells.clear();
-								var mins = [SIZE, SIZE];
-								var maxs = [0, 0];
 								for (c in sel) {
-									mins[0] = min(mins[0], c.i);
-									mins[1] = min(mins[1], c.j);
-									maxs[0] = max(maxs[0], c.i);
-									maxs[1] = max(maxs[1], c.j);
-								}
-								final mi = mins[0] + maxs[0] >> 1;
-								final mj = mins[1] + maxs[1] >> 1;
-								for (c in sel) {
-									final di = c.i - mi;
-									final dj = c.j - mj;
 									final data = c.data;
-									copiedCells.push(new Cell(di, dj, data));
+									copiedCells.push(new Cell(c.i, c.j, data));
 									if (cut) {
 										c.selected = false;
 										c.data = None;
 									}
 								}
+								normalizeCopiedCells();
 								break;
 							}
 						}
@@ -747,7 +783,7 @@ class Main extends App {
 				if (key(Escape) || mouse.dright == 1) {
 					cell.text = "";
 					mode = Edit;
-				} else if (key("e") || mouse.dleft == 1) {
+				} else if (key("e") || key(Enter) || mouse.dleft == 1) {
 					cell.text = "";
 					cell.data = Cell.parseData(textInput);
 					mode = Edit;
@@ -780,7 +816,7 @@ class Main extends App {
 					mode = Edit;
 			case Input(index):
 				editText();
-				if (key("e")) {
+				if (key("e") || key(Enter) || mouse.dleft == 1) {
 					try {
 						inputs[index] = textInput;
 					} catch (e) {
@@ -842,7 +878,7 @@ class Main extends App {
 				y += lh * 0.5;
 				msg("WASD, HJKL, Arrows: Move");
 				y += lh * 0.5;
-				msg("E: Edit Cell");
+				msg("E, LMB(x2): Edit Cell");
 				y += lh * 0.5;
 				msg("DEL: Erase Cells");
 				msg("X: Cut Cells");
@@ -853,6 +889,12 @@ class Main extends App {
 				msg("2: Edit Input B (= " + inputs[1].toString() + ")");
 				y += lh * 0.5;
 				msg("Enter: Run Simulation");
+				y += lh * 0.5;
+				g.fillColor(1, 0, 0);
+				final wpos = toWorld(input.mouse.pos);
+				final ci = Math.floor(wpos.y);
+				final cj = Math.floor(wpos.x);
+				msg('(dx, dy) = (${cursorJ - cj}, ${cursorI - ci})');
 			case Write(_):
 				msg("A, B, S: I/O");
 				y += lh * 0.5;
@@ -866,7 +908,7 @@ class Main extends App {
 				y += lh * 0.5;
 				msg("Backspace: Erace Last");
 				y += lh * 0.5;
-				msg("E, LMB: Confirm");
+				msg("E, LMB, Enter: Confirm");
 				msg("ESC, RMB: Cancel");
 			case Paste:
 				msg("LMB: Confirm");
@@ -879,6 +921,10 @@ class Main extends App {
 					}
 					y += lh * 0.5;
 					g.fillColor(0);
+				}
+				if (w.result != None) {
+					msg("Result: " + w.result.toString());
+					y += lh * 0.5;
 				}
 				msg("Showing Tick " + (tick + 1) + "/" + w.ticks.length);
 				msg("time = " + (w.ticks[tick].t + 1));
@@ -899,7 +945,7 @@ class Main extends App {
 			case Input(index):
 				msg("AB".charAt(index) + " = " + textInput);
 				y += lh * 0.5;
-				msg("E: Confirm");
+				msg("E, LMB, Enter: Confirm");
 				msg("ESC: Cancel");
 		}
 	}
@@ -940,6 +986,31 @@ class Main extends App {
 			g.strokeColor(0);
 			g.strokeRect(cursorJ, cursorI, 1, 1);
 		}
+		if (mode == Edit) {
+			final wpos = toWorld(input.mouse.pos);
+			final ci = Math.floor(wpos.y);
+			final cj = Math.floor(wpos.x);
+			if (ci != cursorI || cj != cursorJ) {
+				g.strokeWidth(0.1);
+				g.strokeColor(0, 0.5);
+				g.strokeRect(cj, ci, 1, 1);
+				g.strokeColor(1, 0, 0, 0.5);
+				final st = Vec2.of(cj + 0.5, ci + 0.5);
+				final en = Vec2.of(cursorJ + 0.5, cursorI + 0.5);
+				final len = (en - st).length;
+				final ang = Math.atan2(en.y - st.y, en.x - st.x);
+				g.save();
+				g.translate(st.x, st.y);
+				g.rotate(ang);
+				g.drawLine(0, 0, len, 0);
+				g.beginPath();
+				g.moveTo(len - 0.3, -0.3);
+				g.lineTo(len, 0);
+				g.lineTo(len - 0.3, 0.3);
+				g.stroke();
+				g.restore();
+			}
+		}
 
 		g.restore();
 	}
@@ -948,7 +1019,7 @@ class Main extends App {
 		if (cell.selected) {
 			g.fillColor(0.75, 0.75, 1, alpha);
 		} else {
-			g.fillColor(1, alpha);
+			g.fillColor(alpha == 1 && cell.i ^ cell.j & 1 == 0 ? 0.95 : 1, alpha);
 		}
 		g.fillRect(0, 0, 1, 1);
 		switch mode {
@@ -961,7 +1032,7 @@ class Main extends App {
 		}
 		g.strokeColor(0, alpha);
 		g.strokeRect(0, 0, 1, 1);
-		final text = cell.text != "" ? cell.text : cell.data.toString();
+		final text = cell.text != "" ? cell.text : cell.data.toString(true);
 		if (text != "" && text != " ") {
 			g.fillColor(0, alpha);
 			g.fillText(text, 0.5, 0.5, 1);

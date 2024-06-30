@@ -106,7 +106,10 @@ var CellData = $hxEnums["CellData"] = { __ename__:true,__constructs__:null
 };
 CellData.__constructs__ = [CellData.None,CellData.Int,CellData.Arrow,CellData.Op];
 class _$Main_CellDataTools {
-	static toString(data) {
+	static toString(data,render) {
+		if(render == null) {
+			render = false;
+		}
 		switch(data._hx_index) {
 		case 0:
 			return "";
@@ -158,7 +161,12 @@ class _$Main_CellDataTools {
 			case 5:
 				return "=";
 			case 6:
-				return "≠";
+				if(render) {
+					return "≠";
+				} else {
+					return "#";
+				}
+				break;
 			case 7:
 				return "@";
 			case 8:
@@ -638,14 +646,20 @@ class World {
 					break;
 				}
 			}
+			let submitByWarp = false;
 			let _g3 = 0;
 			while(_g3 < warpTargets.length) {
 				let w1 = warpTargets[_g3];
 				++_g3;
-				let _g = 0;
-				while(_g < warpTargets.length) {
-					let w2 = warpTargets[_g];
-					++_g;
+				let _g = this.times[w1.t].cellAt(w1.i,w1.j).data;
+				if(_g._hx_index == 3 && _g.op == 10) {
+					this.result = w1.data;
+					submitByWarp = true;
+				}
+				let _g1 = 0;
+				while(_g1 < warpTargets.length) {
+					let w2 = warpTargets[_g1];
+					++_g1;
 					if(w1 == w2) {
 						break;
 					}
@@ -667,7 +681,7 @@ class World {
 					break;
 				}
 			}
-			if(warpTargets.length > 0 && this.result == CellData.None) {
+			if(warpTargets.length > 0 && (this.result == CellData.None || submitByWarp)) {
 				let t = warpTargets[0].t;
 				while(this.times.length > t + 1) this.times.pop();
 				f = this.times[t].copy();
@@ -794,6 +808,38 @@ class Main extends pot_core_App {
 		};
 		window.document.getElementById("export").onclick = function() {
 			return window.navigator.clipboard.writeText(_gthis.w.input.toString());
+		};
+		window.document.getElementById("import-mod").onclick = function() {
+			return window.navigator.clipboard.readText().then(function(text) {
+				let f = new Field();
+				f.fromString(text);
+				_gthis.copiedCells.length = 0;
+				let _g = 0;
+				let _g1 = f.cells;
+				while(_g < _g1.length) {
+					let c = _g1[_g];
+					++_g;
+					if(c.data != CellData.None) {
+						_gthis.copiedCells.push(c);
+					}
+				}
+				_gthis.normalizeCopiedCells();
+				return _gthis.mode = Mode.Paste;
+			});
+		};
+		window.document.getElementById("export-mod").onclick = function() {
+			let sel = _gthis.selectedCells(_gthis.w.input);
+			if(sel.length == 0) {
+				return;
+			}
+			let f = new Field();
+			let _g = 0;
+			while(_g < sel.length) {
+				let c = sel[_g];
+				++_g;
+				f.cellAt(c.i,c.j).data = c.data;
+			}
+			window.navigator.clipboard.writeText(f.toString());
 		};
 		this.pot.start();
 	}
@@ -989,6 +1035,38 @@ class Main extends pot_core_App {
 	runSimulation() {
 		this.w.run(this.inputs[0],this.inputs[1]);
 	}
+	normalizeCopiedCells() {
+		let mins_0 = 32;
+		let mins_1 = 32;
+		let maxs_0 = 0;
+		let maxs_1 = 0;
+		let _g = 0;
+		let _g1 = this.copiedCells;
+		while(_g < _g1.length) {
+			let c = _g1[_g];
+			++_g;
+			let a = mins_0;
+			let b = c.i;
+			mins_0 = a < b ? a : b;
+			let a1 = mins_1;
+			let b1 = c.j;
+			mins_1 = a1 < b1 ? a1 : b1;
+			let a2 = maxs_0;
+			let b2 = c.i;
+			maxs_0 = a2 > b2 ? a2 : b2;
+			let a3 = maxs_1;
+			let b3 = c.j;
+			maxs_1 = a3 > b3 ? a3 : b3;
+		}
+		let mi = mins_0 + maxs_0 >> 1;
+		let mj = mins_1 + maxs_1 >> 1;
+		let _this = this.copiedCells;
+		let _g_current = 0;
+		while(_g_current < _this.length) {
+			let _g_value = _this[_g_current];
+			this.copiedCells[_g_current++] = new Cell(_g_value.i - mi,_g_value.j - mj,_g_value.data);
+		}
+	}
 	processInput() {
 		let mouse = this.input.mouse;
 		let kb = this.input.keyboard;
@@ -1040,39 +1118,17 @@ class Main extends pot_core_App {
 						let sel = this.selectedCells(f);
 						if(sel.length != 0) {
 							this.copiedCells.length = 0;
-							let mins_0 = 32;
-							let mins_1 = 32;
-							let maxs_0 = 0;
-							let maxs_1 = 0;
 							let _g = 0;
 							while(_g < sel.length) {
 								let c = sel[_g];
 								++_g;
-								let a = mins_0;
-								let b = c.i;
-								mins_0 = a < b ? a : b;
-								let a1 = mins_1;
-								let b1 = c.j;
-								mins_1 = a1 < b1 ? a1 : b1;
-								let a2 = maxs_0;
-								let b2 = c.i;
-								maxs_0 = a2 > b2 ? a2 : b2;
-								let a3 = maxs_1;
-								let b3 = c.j;
-								maxs_1 = a3 > b3 ? a3 : b3;
-							}
-							let mi = mins_0 + maxs_0 >> 1;
-							let mj = mins_1 + maxs_1 >> 1;
-							let _g1 = 0;
-							while(_g1 < sel.length) {
-								let c = sel[_g1];
-								++_g1;
-								this.copiedCells.push(new Cell(c.i - mi,c.j - mj,c.data));
+								this.copiedCells.push(new Cell(c.i,c.j,c.data));
 								if(cut) {
 									c.selected = false;
 									c.data = CellData.None;
 								}
 							}
+							this.normalizeCopiedCells();
 							break;
 						}
 					}
@@ -1140,7 +1196,7 @@ class Main extends pot_core_App {
 		case 1:
 			let _g1 = _g.index;
 			this.editText();
-			if(this.key("e")) {
+			if(this.key("e") || this.key("Enter") || mouse.dleft == 1) {
 				try {
 					this.inputs[_g1] = BigIntWrapper.fromString(this.textInput);
 				} catch( _g ) {
@@ -1176,7 +1232,7 @@ class Main extends pot_core_App {
 			if(this.key("Escape") || mouse.dright == 1) {
 				_g2.text = "";
 				this.mode = Mode.Edit;
-			} else if(this.key("e") || mouse.dleft == 1) {
+			} else if(this.key("e") || this.key("Enter") || mouse.dleft == 1) {
 				_g2.text = "";
 				_g2.data = Cell.parseData(this.textInput);
 				this.mode = Mode.Edit;
@@ -1263,7 +1319,7 @@ class Main extends pot_core_App {
 			this.g.c2d.fillText("- Hold Shift: Keep Selection",0,90.);
 			this.g.c2d.fillText("ESC: Deselect All",0,108.);
 			this.g.c2d.fillText("WASD, HJKL, Arrows: Move",0,135.);
-			this.g.c2d.fillText("E: Edit Cell",0,162.);
+			this.g.c2d.fillText("E, LMB(x2): Edit Cell",0,162.);
 			this.g.c2d.fillText("DEL: Erase Cells",0,189.);
 			this.g.c2d.fillText("X: Cut Cells",0,207.);
 			this.g.c2d.fillText("C: Copy Cells",0,225.);
@@ -1273,10 +1329,16 @@ class Main extends pot_core_App {
 			let text2 = "2: Edit Input B (= " + BigIntWrapper.toString(this.inputs[1]) + ")";
 			this.g.c2d.fillText(text2,0,288.);
 			this.g.c2d.fillText("Enter: Run Simulation",0,315.);
+			this.g.fillColorImpl(1,0,0,1);
+			let screen = this.input.mouse.pos;
+			let a = this.pot.get_size();
+			let b = this.scale;
+			let b1 = this.center;
+			this.g.c2d.fillText("(dx, dy) = (" + (this.cursorJ - Math.floor((screen.x - a.x * 0.5) / b + b1.x)) + ", " + (this.cursorI - Math.floor((screen.y - a.y * 0.5) / b + b1.y)) + ")",0,342.);
 			break;
 		case 1:
 			this.g.c2d.fillText("AB".charAt(_g2.index) + " = " + this.textInput,0,27.);
-			this.g.c2d.fillText("E: Confirm",0,54.);
+			this.g.c2d.fillText("E, LMB, Enter: Confirm",0,54.);
 			this.g.c2d.fillText("ESC: Cancel",0,72.);
 			break;
 		case 2:
@@ -1291,7 +1353,7 @@ class Main extends pot_core_App {
 			this.g.c2d.fillText("HJKL, Arrows: Arrow",0,117.);
 			this.g.c2d.fillText("0-9: Integer",0,144.);
 			this.g.c2d.fillText("Backspace: Erace Last",0,171.);
-			this.g.c2d.fillText("E, LMB: Confirm",0,198.);
+			this.g.c2d.fillText("E, LMB, Enter: Confirm",0,198.);
 			this.g.c2d.fillText("ESC, RMB: Cancel",0,216.);
 			break;
 		case 4:
@@ -1305,6 +1367,12 @@ class Main extends pot_core_App {
 				}
 				y += 9.;
 				this.g.fillColorImpl(0,0,0,1);
+			}
+			if(this.w.result != CellData.None) {
+				let text = "Result: " + _$Main_CellDataTools.toString(this.w.result);
+				this.g.c2d.fillText(text,0,y);
+				y += 18.0;
+				y += 9.;
 			}
 			this.g.c2d.fillText("Showing Tick " + (this.tick + 1) + "/" + this.w.ticks.length,0,y);
 			y += 18.0;
@@ -1357,7 +1425,8 @@ class Main extends pot_core_App {
 				if(cell.selected) {
 					this.g.fillColorImpl(0.75,0.75,1,1);
 				} else {
-					this.g.fillColorImpl(1,1,1,1);
+					let rgb = ((cell.i ^ cell.j) & 1) == 0 ? 0.95 : 1;
+					this.g.fillColorImpl(rgb,rgb,rgb,1);
 				}
 				this.g.c2d.fillRect(0,0,1,1);
 				let _g = this.mode;
@@ -1369,7 +1438,7 @@ class Main extends pot_core_App {
 				}
 				this.g.strokeColorImpl(0,0,0,1);
 				this.g.c2d.strokeRect(0,0,1,1);
-				let text = cell.text != "" ? cell.text : _$Main_CellDataTools.toString(cell.data);
+				let text = cell.text != "" ? cell.text : _$Main_CellDataTools.toString(cell.data,true);
 				if(text != "" && text != " ") {
 					this.g.fillColorImpl(0,0,0,1);
 					this.g.c2d.fillText(text,0.5,0.5,1);
@@ -1394,7 +1463,8 @@ class Main extends pot_core_App {
 				if(c.selected) {
 					this.g.fillColorImpl(0.75,0.75,1,0.5);
 				} else {
-					this.g.fillColorImpl(1,1,1,0.5);
+					let rgb = 1;
+					this.g.fillColorImpl(rgb,rgb,rgb,0.5);
 				}
 				this.g.c2d.fillRect(0,0,1,1);
 				let _g2 = this.mode;
@@ -1406,7 +1476,7 @@ class Main extends pot_core_App {
 				}
 				this.g.strokeColorImpl(0,0,0,0.5);
 				this.g.c2d.strokeRect(0,0,1,1);
-				let text = c.text != "" ? c.text : _$Main_CellDataTools.toString(c.data);
+				let text = c.text != "" ? c.text : _$Main_CellDataTools.toString(c.data,true);
 				if(text != "" && text != " ") {
 					this.g.fillColorImpl(0,0,0,0.5);
 					this.g.c2d.fillText(text,0.5,0.5,1);
@@ -1418,6 +1488,42 @@ class Main extends pot_core_App {
 			this.g.c2d.lineWidth = 0.1;
 			this.g.strokeColorImpl(0,0,0,1);
 			this.g.c2d.strokeRect(this.cursorJ,this.cursorI,1,1);
+		}
+		if(this.mode == Mode.Edit) {
+			let screen = this.input.mouse.pos;
+			let a = this.pot.get_size();
+			let b = this.scale;
+			let b1 = this.center;
+			let ci = Math.floor((screen.y - a.y * 0.5) / b + b1.y);
+			let cj = Math.floor((screen.x - a.x * 0.5) / b + b1.x);
+			if(ci != this.cursorI || cj != this.cursorJ) {
+				this.g.c2d.lineWidth = 0.1;
+				this.g.strokeColorImpl(0,0,0,0.5);
+				this.g.c2d.strokeRect(cj,ci,1,1);
+				this.g.strokeColorImpl(1,0,0,0.5);
+				let st_x = cj + 0.5;
+				let st_y = ci + 0.5;
+				let x = this.cursorJ + 0.5;
+				let y = this.cursorI + 0.5;
+				let x1 = x - st_x;
+				let y1 = y - st_y;
+				let len = Math.sqrt(x1 * x1 + y1 * y1);
+				let ang = Math.atan2(y - st_y,x - st_x);
+				this.g.c2d.save();
+				this.g.c2d.translate(st_x,st_y);
+				this.g.c2d.rotate(ang);
+				let _this = this.g;
+				_this.c2d.beginPath();
+				_this.c2d.moveTo(0,0);
+				_this.c2d.lineTo(len,0);
+				_this.c2d.stroke();
+				this.g.c2d.beginPath();
+				this.g.c2d.moveTo(len - 0.3,-0.3);
+				this.g.c2d.lineTo(len,0);
+				this.g.c2d.lineTo(len - 0.3,0.3);
+				this.g.c2d.stroke();
+				this.g.c2d.restore();
+			}
 		}
 		this.g.c2d.restore();
 	}
