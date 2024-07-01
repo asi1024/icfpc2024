@@ -16,6 +16,7 @@
 #include <map>
 #include <thread>
 #include <mutex>
+#include <memory>
 
 using i64 = long long;
 
@@ -73,7 +74,7 @@ std::pair<std::vector<int>, std::vector<i64>> make_random_seq(i64 s, i64 k, i64 
     return {ret, seeds};
 }
 
-std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride, int tid) {
+std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stride, int tid, const std::vector<int>& dir_map) {
     for (int y = 0; y < H; ++y) {
         for (int x = 0; x < W; ++x) {
             visited[tid][y][x] = false;
@@ -90,6 +91,7 @@ std::pair<bool, int> run_randomwalk(i64 s, i64 k, i64 prime, int steps, int stri
     }
 
     for (int dir : dirs) {
+        dir = dir_map[dir];
         for (int d = 1; d <= stride; ++d) {
             int y2 = y + DY[dir];
             int x2 = x + DX[dir];
@@ -152,7 +154,7 @@ int get_cycle_len(i64 s, i64 k, i64 prime) {
     return ret;
 }
 
-std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride, int tid) {
+std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int stride, int tid, const std::vector<int>& dir_map) {
     auto [dirs, seeds] = make_random_seq(s, k, prime);
 
     for (int y = 0; y < H; ++y) {
@@ -164,6 +166,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
     first_visit_time[tid][y][x] = -2;
     for (int i = 0; i < (int)dirs.size(); ++i) {
         int dir = dirs[i];
+        dir = dir_map[dir];
         int y2 = y + DY[dir];
         int x2 = x + DX[dir];
 
@@ -225,7 +228,7 @@ std::optional<std::string> rectify_randomwalk(i64 s, i64 k, i64 prime, int strid
             timings[t - 1] = v;
         }
         for (int i = 0; i < stride; ++i) {
-            oss << DIRNAME[dirs[t]] << timings[i];
+            oss << DIRNAME[dir_map[dirs[t]]] << timings[i];
         }
         oss << " ";
     }
@@ -405,8 +408,8 @@ int main(int argc, char** argv) {
     }
     fprintf(stderr, "H: %d, W: %d, start: (%d, %d)\n", H, W, sy, sx);
 
-    int steps = 999000 / stride;
-    int steps_max = steps;
+    int steps_g = 999000 / stride;
+    int steps_max = steps_g;
     int sota = 0;
     int last_rectify_len = 1000;
     std::mutex mtx;
@@ -423,6 +426,7 @@ int main(int argc, char** argv) {
         threads.push_back(std::thread([&, i] {
             std::mt19937 rng(seed_base * 123456789 + i);
             for (;;) {
+                int steps = steps_g;
                 auto [p, roots] = gen_prime_and_primitive_roots(rng, 100, eco_mode);
                 for (i64 k : roots) {
                     if (sota == n_sp) {
@@ -434,20 +438,26 @@ int main(int argc, char** argv) {
                         s = decide_s(p, k, steps);
                     } else {
                         s = -1;
-                        int best_len = -1;
+                        std::vector<std::pair<int, i64>> ss;
                         for (i64 s_cand = 2; s_cand <= 93; ++s_cand) {
                             int len = get_cycle_len(s_cand, k, p);
                             if (len > steps_max) continue;
 
-                            if (len > best_len) {
-                                best_len = len;
-                                s = s_cand;
-                            }
+                            ss.push_back({len, s_cand});
                         }
-                        if (s == -1) continue;
-                        steps = best_len;
+                        std::sort(ss.begin(), ss.end());
+                        std::reverse(ss.begin(), ss.end());
+                        if (ss.size() == 0) continue;
+
+                        int idx = std::uniform_int_distribution<int>(0, std::min(10, (int)ss.size() - 1))(rng);
+                        std::tie(steps, s) = ss[idx];
                     }
-                    auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride, i);
+                    std::vector<int> dir_map;
+                    for (int j = 0; j < 4; ++j) {
+                        dir_map.push_back(j);
+                    }
+                    std::shuffle(dir_map.begin(), dir_map.end(), rng);
+                    auto [isok, n_visited] = run_randomwalk(s, k, p, steps, stride, i, dir_map);
 
                     mtx.lock();
                     if (sota < n_visited) {
@@ -457,7 +467,7 @@ int main(int argc, char** argv) {
                     mtx.unlock();
 
                     if (n_sp - n_visited <= 100) {
-                        std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride, i);
+                        std::optional<std::string> rectified = rectify_randomwalk(s, k, p, stride, i, dir_map);
                         if (rectified && rectified->size() < last_rectify_len) {
                             mtx.lock();
                             last_rectify_len = rectified->size();
@@ -468,13 +478,20 @@ int main(int argc, char** argv) {
                             fprintf(stderr, "p: %s (%lld)\n", p_str.c_str(), p);
                             fprintf(stderr, "k: %s (%lld)\n", k_str.c_str(), k);
                             fprintf(stderr, "s: %s (%lld)\n", s_str.c_str(), s);
+
+                            std::string dir_map_str;
+                            for (int j = 0; j < 4; ++j) {
+                                for (int w = 0; w < stride; ++w) {
+                                    dir_map_str.push_back(DIRNAME[dir_map[j]]);
+                                }
+                            }
                             if (stride == 1) {
-                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% SL>FO %s\n",
-                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), s_str.c_str()
+                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I\" BD B%% vs I%% S%s %s\n",
+                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), dir_map_str.c_str(), s_str.c_str()
                                 );
                             } else {
-                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% SLL>>FFOO %s\n",
-                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), s_str.c_str()
+                                printf("B. S3/,6%%},!-\"$!-!.%s} B$ B$ Lf B$ vf vf Lf Ls ? B= vs I\" S B. B$ B$ vf vf B%% B* vs %s %s %sBT I# BD B* I# B%% vs I%% S%s %s\n",
+                                    pid_str.c_str(), k_str.c_str(), p_str.c_str(), rectified->c_str(), dir_map_str.c_str(), s_str.c_str()
                                 );
                             }
                             fflush(stdout);
