@@ -648,12 +648,67 @@ class Main extends App {
 		}
 	}
 
-	function moveSelection(f:Field, di:Int, dj:Int):Void {
-		final sels = selectedCells(f);
-		for (c in sels) {
-			c.selected = false;
+	function warpIJDiff(f:Field, c:Cell):Array<Int> {
+		if (c.data.match(Op(Warp))) {
+			final l = f.cellAt(c.i, c.j - 1).data;
+			final r = f.cellAt(c.i, c.j + 1).data;
+			switch [l, r] {
+				case [Int(a), Int(b)] if (a > -100 && a < 100 && b > -100 && b < 100):
+					final dx = a.toInt();
+					final dy = b.toInt();
+					trace(dx + " " + dy);
+					return [-dy, -dx];
+				case _:
+			}
 		}
-		for (c in sels) {
+		return null;
+	}
+
+	function moveSelection(f:Field, di:Int, dj:Int):Void {
+		final warpsIn = [];
+		final warpsOut = [];
+		for (c in f.cells) {
+			final diff = warpIJDiff(f, c);
+			if (diff == null)
+				continue;
+			final dstI = c.i + diff[0];
+			final dstJ = c.j + diff[1];
+			final dst = f.cellAt(dstI, dstJ);
+			final srcIn = c.selected;
+			final dstIn = dst.selected;
+			if (!srcIn && dstIn) {
+				warpsIn.push(c);
+			}
+			if (srcIn && !dstIn) {
+				warpsOut.push(c);
+			}
+		}
+		for (c in warpsIn) {
+			final l = f.cellAt(c.i, c.j - 1);
+			final r = f.cellAt(c.i, c.j + 1);
+			switch [l.data, r.data] {
+				case [Int(a), Int(b)]:
+					l.data = Int(a - dj);
+					r.data = Int(b - di);
+				case _:
+					throw "internal error";
+			}
+		}
+		for (c in warpsOut) {
+			final l = f.cellAt(c.i, c.j - 1);
+			final r = f.cellAt(c.i, c.j + 1);
+			switch [l.data, r.data] {
+				case [Int(a), Int(b)]:
+					l.data = Int(a + dj);
+					r.data = Int(b + di);
+				case _:
+					throw "internal error";
+			}
+		}
+		final copy = selectedCells(f).map(c -> c.copy());
+		deleteSelection(f);
+		pasteAt(f, copy, di, dj);
+		for (c in copy) {
 			f.cellAt(c.i + di, c.j + dj).selected = true;
 		}
 	}
@@ -673,9 +728,9 @@ class Main extends App {
 		}
 	}
 
-	function pasteAt(f:Field, i:Int, j:Int):Void {
+	function pasteAt(f:Field, cells:Array<Cell>, i:Int, j:Int):Void {
 		clearSelection(f);
-		for (src in copiedCells) {
+		for (src in cells) {
 			final ii = i + src.i;
 			final jj = j + src.j;
 			if (f.inBounds(ii, jj)) {
@@ -858,12 +913,13 @@ class Main extends App {
 								final b:BigInt = hasB ? input[i++] : 1;
 								w.run(a, b, 1000000, true);
 								if (w.failReason != "") {
-									Browser.alert("failed for A=" + a + (hasB ? " B=" + b.toString() : "") + "\nreason: " +
-										w.failReason);
+									Browser.alert("failed for A=" + a + (hasB ? " B=" + b.toString() : "") +
+										"\nreason: " + w.failReason);
 									break;
 								}
 								if (!w.result.match(Int(_))) {
-									Browser.alert("got non-number result for A=" + a + (hasB ? " B=" + b.toString() : ""));
+									Browser.alert("got non-number result for A=" + a + (hasB ? " B=" +
+										b.toString() : ""));
 									break;
 								}
 								switch w.result {
@@ -989,7 +1045,7 @@ class Main extends App {
 					if (cell != null && mouse.dleft == 1) {
 						cursorI = cell.i;
 						cursorJ = cell.j;
-						pasteAt(f, cell.i, cell.j);
+						pasteAt(f, copiedCells, cell.i, cell.j);
 						gotoEdit();
 					}
 				}
@@ -1218,45 +1274,50 @@ class Main extends App {
 			g.strokeColor(0);
 			g.strokeRect(cursorJ, cursorI, 1, 1);
 		}
-		if (mode == Edit) {
-			final c = f.cellAt(cursorI, cursorJ);
-			if (c.data.match(Op(Warp))) {
-				final l = f.cellAt(c.i, c.j - 1).data;
-				final r = f.cellAt(c.i, c.j + 1).data;
-				switch [l, r] {
-					case [Int(a), Int(b)] if (a > -100 && a < 100 && b > -100 && b < 100):
-						final dx = a.toInt();
-						final dy = b.toInt();
-						final dstI = c.i - dy;
-						final dstJ = c.j - dx;
-						g.strokeWidth(0.1);
-						g.strokeColor(0, 0.5);
-						g.strokeRect(dstJ, dstI, 1, 1);
-						g.strokeColor(1, 0, 0, 0.5);
-						final en = Vec2.of(dstJ + 0.5, dstI + 0.5);
-						final st = Vec2.of(c.j + 0.5, c.i + 0.5);
-						final len = (en - st).length;
-						final ang = Math.atan2(en.y - st.y, en.x - st.x);
-						g.save();
-						g.translate(st.x, st.y);
-						g.rotate(ang);
-						g.drawLine(0, 0, len, 0);
-						g.beginPath();
-						g.moveTo(len - 0.3, -0.3);
-						g.lineTo(len, 0);
-						g.lineTo(len - 0.3, 0.3);
-						g.stroke();
-						g.restore();
-					case _:
-				}
-				final wpos = toWorld(input.mouse.pos);
-				final ci = Math.floor(wpos.y);
-				final cj = Math.floor(wpos.x);
-				if (ci != cursorI || cj != cursorJ) {
-					g.strokeWidth(0.1);
-					g.strokeColor(0, 0.5);
-					g.strokeRect(cj, ci, 1, 1);
-					g.strokeColor(1, 0, 0, 0.5);
+		if (mode == Edit || mode == Select) {
+			final cc = f.cellAt(cursorI, cursorJ);
+			for (c in f.cells) {
+				if (c.data.match(Op(Warp))) {
+					final l = f.cellAt(c.i, c.j - 1).data;
+					final r = f.cellAt(c.i, c.j + 1).data;
+					final selected = c == cc;
+					switch [l, r] {
+						case [Int(a), Int(b)] if (a > -100 && a < 100 && b > -100 && b < 100):
+							final dx = a.toInt();
+							final dy = b.toInt();
+							final dstI = c.i - dy;
+							final dstJ = c.j - dx;
+							g.strokeWidth(0.1);
+							// g.strokeColor(0, 0.5);
+							// g.strokeRect(dstJ, dstI, 1, 1);
+							g.strokeColor(1, 0, 0, selected ? 0.5 : 0.2);
+							final en = Vec2.of(dstJ + 0.5, dstI + 0.5);
+							final st = Vec2.of(c.j + 0.5, c.i + 0.5);
+							final len = (en - st).length;
+							final ang = Math.atan2(en.y - st.y, en.x - st.x);
+							g.save();
+							g.translate(st.x, st.y);
+							g.rotate(ang);
+							g.drawLine(0, 0, len, 0);
+							g.beginPath();
+							g.moveTo(len - 0.3, -0.3);
+							g.lineTo(len, 0);
+							g.lineTo(len - 0.3, 0.3);
+							g.stroke();
+							g.restore();
+						case _:
+					}
+					if (c == cc) {
+						final wpos = toWorld(input.mouse.pos);
+						final ci = Math.floor(wpos.y);
+						final cj = Math.floor(wpos.x);
+						if (ci != cursorI || cj != cursorJ) {
+							g.strokeWidth(0.1);
+							g.strokeColor(0, 0.5);
+							g.strokeRect(cj, ci, 1, 1);
+							g.strokeColor(1, 0, 0, 0.5);
+						}
+					}
 				}
 			}
 		}

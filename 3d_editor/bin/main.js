@@ -1000,14 +1000,100 @@ class Main extends pot_core_App {
 			});
 		}
 	}
+	warpIJDiff(f,c) {
+		let _g = c.data;
+		if(_g._hx_index == 3 && _g.op == 7) {
+			let l = f.cellAt(c.i,c.j - 1).data;
+			let r = f.cellAt(c.i,c.j + 1).data;
+			if(l._hx_index == 1) {
+				let _g = l.a;
+				if(r._hx_index == 1) {
+					let _g1 = r.a;
+					if(BigIntWrapper.gt(_g,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g,BigIntWrapper.fromInt(100)) && BigIntWrapper.gt(_g1,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g1,BigIntWrapper.fromInt(100))) {
+						let dx = BigIntWrapper.toInt(_g);
+						let dy = BigIntWrapper.toInt(_g1);
+						console.log("src/Main.hx:659:",dx + " " + dy);
+						return [-dy,-dx];
+					}
+				}
+			}
+		}
+		return null;
+	}
 	moveSelection(f,di,dj) {
-		let sels = this.selectedCells(f);
+		let warpsIn = [];
+		let warpsOut = [];
 		let _g = 0;
-		while(_g < sels.length) sels[_g++].selected = false;
-		let _g1 = 0;
-		while(_g1 < sels.length) {
-			let c = sels[_g1];
-			++_g1;
+		let _g1 = f.cells;
+		while(_g < _g1.length) {
+			let c = _g1[_g];
+			++_g;
+			let diff = this.warpIJDiff(f,c);
+			if(diff == null) {
+				continue;
+			}
+			let dst = f.cellAt(c.i + diff[0],c.j + diff[1]);
+			let srcIn = c.selected;
+			let dstIn = dst.selected;
+			if(!srcIn && dstIn) {
+				warpsIn.push(c);
+			}
+			if(srcIn && !dstIn) {
+				warpsOut.push(c);
+			}
+		}
+		let _g2 = 0;
+		while(_g2 < warpsIn.length) {
+			let c = warpsIn[_g2];
+			++_g2;
+			let l = f.cellAt(c.i,c.j - 1);
+			let r = f.cellAt(c.i,c.j + 1);
+			let _g = l.data;
+			let _g1 = r.data;
+			if(_g._hx_index == 1) {
+				if(_g1._hx_index == 1) {
+					l.data = CellData.Int(BigIntWrapper.sub(_g.a,BigIntWrapper.fromInt(dj)));
+					r.data = CellData.Int(BigIntWrapper.sub(_g1.a,BigIntWrapper.fromInt(di)));
+				} else {
+					throw haxe_Exception.thrown("internal error");
+				}
+			} else {
+				throw haxe_Exception.thrown("internal error");
+			}
+		}
+		let _g3 = 0;
+		while(_g3 < warpsOut.length) {
+			let c = warpsOut[_g3];
+			++_g3;
+			let l = f.cellAt(c.i,c.j - 1);
+			let r = f.cellAt(c.i,c.j + 1);
+			let _g = l.data;
+			let _g1 = r.data;
+			if(_g._hx_index == 1) {
+				if(_g1._hx_index == 1) {
+					l.data = CellData.Int(BigIntWrapper.add(_g.a,BigIntWrapper.fromInt(dj)));
+					r.data = CellData.Int(BigIntWrapper.add(_g1.a,BigIntWrapper.fromInt(di)));
+				} else {
+					throw haxe_Exception.thrown("internal error");
+				}
+			} else {
+				throw haxe_Exception.thrown("internal error");
+			}
+		}
+		let _this = this.selectedCells(f);
+		let result = new Array(_this.length);
+		let _g4 = 0;
+		let _g5 = _this.length;
+		while(_g4 < _g5) {
+			let i = _g4++;
+			result[i] = _this[i].copy();
+		}
+		this.deleteSelection(f);
+		this.pasteAt(f,result,di,dj);
+		let _g6 = 0;
+		while(_g6 < result.length) {
+			let c = result[_g6];
+			++_g6;
 			f.cellAt(c.i + di,c.j + dj).selected = true;
 		}
 	}
@@ -1028,12 +1114,11 @@ class Main extends pot_core_App {
 			}
 		}
 	}
-	pasteAt(f,i,j) {
+	pasteAt(f,cells,i,j) {
 		this.clearSelection(f);
 		let _g = 0;
-		let _g1 = this.copiedCells;
-		while(_g < _g1.length) {
-			let src = _g1[_g];
+		while(_g < cells.length) {
+			let src = cells[_g];
 			++_g;
 			let ii = i + src.i;
 			let jj = j + src.j;
@@ -1414,7 +1499,7 @@ class Main extends pot_core_App {
 				if(cell != null && mouse.dleft == 1) {
 					this.cursorI = cell.i;
 					this.cursorJ = cell.j;
-					this.pasteAt(f,cell.i,cell.j);
+					this.pasteAt(f,this.copiedCells,cell.i,cell.j);
 					this.mode = Mode.Edit;
 					this.clearSelection(f);
 					f.cellAt(this.cursorI,this.cursorJ).selected = true;
@@ -1761,61 +1846,71 @@ class Main extends pot_core_App {
 			this.g.strokeColorImpl(0,0,0,1);
 			this.g.c2d.strokeRect(this.cursorJ,this.cursorI,1,1);
 		}
-		if(this.mode == Mode.Edit) {
-			let c = f.cellAt(this.cursorI,this.cursorJ);
-			let _g = c.data;
-			if(_g._hx_index == 3 && _g.op == 7) {
-				let l = f.cellAt(c.i,c.j - 1).data;
-				let r = f.cellAt(c.i,c.j + 1).data;
-				if(l._hx_index == 1) {
-					let _g = l.a;
-					if(r._hx_index == 1) {
-						let _g1 = r.a;
-						if(BigIntWrapper.gt(_g,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g,BigIntWrapper.fromInt(100)) && BigIntWrapper.gt(_g1,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g1,BigIntWrapper.fromInt(100))) {
-							let dx = BigIntWrapper.toInt(_g);
-							let dy = BigIntWrapper.toInt(_g1);
-							let dstI = c.i - dy;
-							let dstJ = c.j - dx;
-							this.g.c2d.lineWidth = 0.1;
-							this.g.strokeColorImpl(0,0,0,0.5);
-							this.g.c2d.strokeRect(dstJ,dstI,1,1);
-							this.g.strokeColorImpl(1,0,0,0.5);
-							let en_x = dstJ + 0.5;
-							let en_y = dstI + 0.5;
-							let x = c.j + 0.5;
-							let y = c.i + 0.5;
-							let x1 = en_x - x;
-							let y1 = en_y - y;
-							let len = Math.sqrt(x1 * x1 + y1 * y1);
-							let ang = Math.atan2(en_y - y,en_x - x);
-							this.g.c2d.save();
-							this.g.c2d.translate(x,y);
-							this.g.c2d.rotate(ang);
-							let _this = this.g;
-							_this.c2d.beginPath();
-							_this.c2d.moveTo(0,0);
-							_this.c2d.lineTo(len,0);
-							_this.c2d.stroke();
-							this.g.c2d.beginPath();
-							this.g.c2d.moveTo(len - 0.3,-0.3);
-							this.g.c2d.lineTo(len,0);
-							this.g.c2d.lineTo(len - 0.3,0.3);
-							this.g.c2d.stroke();
-							this.g.c2d.restore();
+		if(this.mode == Mode.Edit || this.mode == Mode.Select) {
+			let cc = f.cellAt(this.cursorI,this.cursorJ);
+			let _g = 0;
+			let _g1 = f.cells;
+			while(_g < _g1.length) {
+				let c = _g1[_g];
+				++_g;
+				let _g2 = c.data;
+				if(_g2._hx_index == 3 && _g2.op == 7) {
+					let l = f.cellAt(c.i,c.j - 1).data;
+					let r = f.cellAt(c.i,c.j + 1).data;
+					if(l._hx_index == 1) {
+						let _g = l.a;
+						if(r._hx_index == 1) {
+							let _g1 = r.a;
+							if(BigIntWrapper.gt(_g,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g,BigIntWrapper.fromInt(100)) && BigIntWrapper.gt(_g1,BigIntWrapper.fromInt(-100)) && BigIntWrapper.lt(_g1,BigIntWrapper.fromInt(100))) {
+								let dx = BigIntWrapper.toInt(_g);
+								let dy = BigIntWrapper.toInt(_g1);
+								let dstI = c.i - dy;
+								let dstJ = c.j - dx;
+								this.g.c2d.lineWidth = 0.1;
+								let a = c == cc ? 0.5 : 0.2;
+								if(a == null) {
+									a = 1;
+								}
+								this.g.strokeColorImpl(1,0,0,a);
+								let en_x = dstJ + 0.5;
+								let en_y = dstI + 0.5;
+								let x = c.j + 0.5;
+								let y = c.i + 0.5;
+								let x1 = en_x - x;
+								let y1 = en_y - y;
+								let len = Math.sqrt(x1 * x1 + y1 * y1);
+								let ang = Math.atan2(en_y - y,en_x - x);
+								this.g.c2d.save();
+								this.g.c2d.translate(x,y);
+								this.g.c2d.rotate(ang);
+								let _this = this.g;
+								_this.c2d.beginPath();
+								_this.c2d.moveTo(0,0);
+								_this.c2d.lineTo(len,0);
+								_this.c2d.stroke();
+								this.g.c2d.beginPath();
+								this.g.c2d.moveTo(len - 0.3,-0.3);
+								this.g.c2d.lineTo(len,0);
+								this.g.c2d.lineTo(len - 0.3,0.3);
+								this.g.c2d.stroke();
+								this.g.c2d.restore();
+							}
 						}
 					}
-				}
-				let screen = this.input.mouse.pos;
-				let a = this.pot.get_size();
-				let b = this.scale;
-				let b1 = this.center;
-				let ci = Math.floor((screen.y - a.y * 0.5) / b + b1.y);
-				let cj = Math.floor((screen.x - a.x * 0.5) / b + b1.x);
-				if(ci != this.cursorI || cj != this.cursorJ) {
-					this.g.c2d.lineWidth = 0.1;
-					this.g.strokeColorImpl(0,0,0,0.5);
-					this.g.c2d.strokeRect(cj,ci,1,1);
-					this.g.strokeColorImpl(1,0,0,0.5);
+					if(c == cc) {
+						let screen = this.input.mouse.pos;
+						let a = this.pot.get_size();
+						let b = this.scale;
+						let b1 = this.center;
+						let ci = Math.floor((screen.y - a.y * 0.5) / b + b1.y);
+						let cj = Math.floor((screen.x - a.x * 0.5) / b + b1.x);
+						if(ci != this.cursorI || cj != this.cursorJ) {
+							this.g.c2d.lineWidth = 0.1;
+							this.g.strokeColorImpl(0,0,0,0.5);
+							this.g.c2d.strokeRect(cj,ci,1,1);
+							this.g.strokeColorImpl(1,0,0,0.5);
+						}
+					}
 				}
 			}
 		}
