@@ -9,6 +9,17 @@ def add_pad(s: str, pad: int) -> str:
     return "? F S" + "a" * max(0, pad - 6) + " " + s
 
 
+def optimize(s: str) -> str:
+    toks = s.split(" ")
+    assert toks[0] == "B."
+    assert toks[1].startswith('S3/,6%},!-"$!-!.')
+    assert toks[14] == "S"
+
+    toks[14] = toks[1]
+    toks = toks[2:]
+    return " ".join(toks)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--target", type=str)
@@ -47,6 +58,7 @@ def main():
             print("sol not found")
             continue
 
+        best_sol = optimize(best_sol)
         if args.pad is not None:
             best_sol = add_pad(best_sol, args.pad)
         headers = {
