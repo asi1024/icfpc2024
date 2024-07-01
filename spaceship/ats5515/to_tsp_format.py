@@ -6,7 +6,7 @@ import numpy as np
 spaceship_data_dir = "spaceship_data"
 files = os.listdir("spaceship_data")
 for file in files:
-    if file!="19.txt":
+    if file!="22.txt":
         continue
     pos = np.loadtxt(f"{spaceship_data_dir}/{file}", dtype=np.int64)
     print(len(pos))
