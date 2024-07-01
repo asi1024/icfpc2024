@@ -33,3 +33,134 @@ BT I" BD B% vs I% SO>FL
 
 を前に置くと seed=<num> に到達したときに生成されるものを <str> に変更できる。
 やりすぎると TLE する
+
+
+RULD
+----
+LOF>
+
+
+
+lambdaman20
+
+B$
+  LW
+    B. B. B. B. B. B.
+    B$ vW SLL>>FFOO #最初の位置から
+    <帰る>
+    B$ vW S>>FFOOLL #右下から
+    <帰る>
+    B$ vW SFFOOLL>> #左下
+    <帰る>
+    B$ vW SOOLL>>FF #左上
+  L?  #convert_map
+  B$ B$
+    Lf B$ vf vf
+    Lf Ls
+      ? B= vs I" S  #stop
+        B.
+          B$ B$ vf vf B% B* vs <k> <p>
+          BT I# BD B* I# B% vs I% v?
+    <s>
+
+
+B. S3/,6%},!-"$!-!.WU}
+B$
+  LW
+    B. B. B. B. B. B.
+    B$ vW SLL>>FFOO #最初の位置から
+    SLLLLLLL
+    B$ vW SOOLL>>FF #左上
+    SOOOOOOO
+    B$ vW SFFOOLL>> #左下
+    SFFFFFFF
+    B$ vW S>>FFOOLL #右下から
+  L?  #convert_map
+  B$ B$
+    Lf B$ vf vf
+    Lf Ls
+      ? B= vs I" S  #stop
+        B.
+          B$ B$ vf vf B% B* vs IM^ IyFFD
+          BT I# BD B* I# B% vs I% v?
+    IJIb\
+
+ending at (127, 120) (dist=8) with s=34413553, k=4197, p=73421837
+p: IyFFD (73421837)
+k: IM^ (4197)
+s: IJIb\ (34413553)
+
+
+
+↓4回呼ぶかわりに再帰する
+B$ B$ B$
+  Lf B$ vf vf
+  Lf L? Ls
+    ? B= vs I"
+      #restart?
+      ? B= BT I" v? SL
+        #base-case
+        S3/,6%},!-"$!-!.WU}
+        B.
+          #restart
+          B$ B$ B$ vf vf BD I# v? IJIb\
+          U$ B* I""""""" U# BT I" BD I# v?
+      #proceed
+      B.
+        B$ B$ B$ vf vf v? B% B* vs IM^ IyFFD
+        BT I# BD B* I# B% vs I% v?
+  S>>FFOOLL>>FFOO IJIb\
+
+
+
+↓神シード
+B$ B$ B$
+  Lf B$ vf vf
+  Lf L? Ls
+    ? B= vs I"
+      #restart?
+      ? B= BT I" v? SL
+        #base-case
+        S3/,6%},!-"$!-!.WU}
+        B$ B$ B$ vf vf BD I# v? IvP4j
+      #proceed
+      B.
+        B$ B$ B$ vf vf v? B% B* vs IM^ IyFFD
+        BT I# BD B* I# B% vs I% v?
+  S>>FFOOLL>>FFOO IvP4j
+
+
+
+↓これなら再帰しないほうがよかった
+B. S3/,6%},!-"$!-!.WU}
+B$
+  LW
+    B. B. B.
+    B$ vW I! #最初の位置から
+    B$ vW I$ #左上
+    B$ vW I# #左下
+    B$ vW I" #右下から
+  Lo  #offset
+  B$ B$
+    Lf B$ vf vf
+    Lf Ls
+      ? B= vs I" S  #stop
+        B.
+          B$ B$ vf vf B% B* vs IM^ IyFFD
+          BT I# BD B* I# B% B+ vs vo I% SLL>>FFOO
+    IvP4j
+
+
+↓再帰再び
+B$ B$ B$
+  Lf B$ vf vf
+  Lf Lo Ls
+    ? B= vs I"
+      #restart?
+      ? B= vo I%
+        S3/,6%},!-"$!-!.WU} #base-case
+        B$ B$ B$ vf vf B+ vo I" IvP4j
+      B.
+        B$ B$ B$ vf vf vo B% B* vs IM^ IyFFD
+        BT I# BD B* I# B% B+ vs vo I% SLL>>FFOO
+  I" IvP4j
